@@ -1,0 +1,762 @@
+module caceffo-A
+imports
+  src-gen/signatures/metaborg-java-sig
+  pp
+  utils
+  libspoofax/term/origin
+	
+rules
+
+//Caceffo A1 is too C specific. Cannot create Java analog
+//because A1 need to have a side effect of reading into memory variable 
+//- this is possible through Wrapper but it is different transform
+	
+//caceffo-A1-catchSignature: 
+//  	|[ 
+//  		~mods* ~type ~funcName(~*<fetch(?|[ int x ]|; !|[ IntWrapped x ]|);
+//							rules(
+//								replaceP1: e |[ x ]| -> e |[ x.wrapped ]|
+//								) 
+//								=> thisParams*>) {
+//  			~*stms*
+//  	   } 
+//  	]| -> 
+//  		|[
+//			~mods* ~type ~funcName(~*thisParams*) {								
+//  				~*[ $[ scanf("%d", [x]); ] | <map(bottomup(replaceP1 <+ id))>stms* ]
+//  	   		}  		
+//  		]|  
+//  		  	
+////caceffo-A1:
+//wrap-int-A1: 
+//  	|[
+//  		~mods* class ~someClass {
+//  			~*<oncetd(caceffo-A1-catchSignature); id => decls*>
+//  		}
+//  	]| -> 
+//  	|[
+//  		~mods* class ~someClass {
+//  			~*decls*
+//  			static class IntWrapper {
+//  				public int wrapped;
+//  			}  			
+//  		}
+//  	]|  
+//  	
+////can be done in regex - catch func definition with int parameter - insert scanf just after {	
+//caceffo-A1-scanf: 
+//  	|[ 
+//  		~mods* ~type ~funcName(~*<fetch((?|[ int x ]|; !"%d"; ?fmt) <+ (?|[ double x ]|; !"%f"; ?fmt)) 
+//								=> thisParams*>) {
+//  			~stms*
+//  	   } 
+//  	]| -> 
+//  		|[
+//			~mods* ~type ~funcName(~*thisParams*) {								
+//  				~$[ scanf("[fmt]", [x]); ]
+//  				~stms*
+//  	   		}  		
+//  		]|   	
+  	
+  //Static Main -> Static addF
+  //catch local var decl type
+//caceffo-A2-occurrences = 
+//	collect-om(?|[ x = x + e1 ]|);
+  
+//can be reproduced with regex on level of outermost class:
+// find expression x = x + e1; - replace it with addF and capture last } - insert addF definition just before last }
+//if for some reason we need same mods from original function - this cannot be achieved
+//if we need to do transform in inner class - we cannot do so
+caceffo-A2 = 
+	?ast;
+  	?|[
+		~mods* class ~someClass {
+  			~decls*
+  		}
+  	]|;
+  	!decls*;
+  	debug(!" Found class: ");
+	one({mmods*, tp1, n1, ps1*, stmts*: 
+		?|[ ~mmods* ~tp1 ~n1(~prms:ps1*) {
+				~stmts*				
+		    }
+		]|;
+		debug(!" Found func: ");
+		!stmts*;
+		oncetd({x, e, stopTerm, stopTermLine, stopTermColumn: ?|[ x = e ]|; 
+			?stopTerm;
+			!(<origin-line>, <origin-column>) => (stopTermLine, stopTermColumn);
+			debug(!" Stop term pos: ");
+			!e; oncebu(?x);
+			debug(!" Found expr: ");
+			!ast;
+			get-type(|x, stopTermLine, stopTermColumn);
+			debug(!" Found x type: ") => xType;	
+			!x => xOut; !e => eOut;		
+			!|[ addF(x) ]|});
+		?mdStmts*;
+		!mmods*; ?mmodsOut*;
+		!|[ ~mmods* ~tp1 ~n1(~prms:ps1*) {
+				~mdStmts*				
+		    }
+		]|	
+	});
+	?mdDecls*; 	
+	!|[
+		~mmodsOut* void addF(~xType ~xOut) {
+			~xOut = ~eOut;
+		}	
+	]|; 
+	?newFunc;
+  	!|[
+  		~mods* class ~someClass {
+  			~mdDecls*
+  			~newFunc
+  		}  	
+  	]|  	
+  	
+  	
+//caceffo-A2-occurrences =
+//	?ast; 
+//	collect-all({ mods*, someClass, decls*, collectedFuncs*, clsNode:
+//	  	?|[
+//			~mods* class ~someClass {
+//	  			~decls*
+//	  		}
+//	  	]|;
+//	  	?clsNode;
+//	  	debug(!" Found class: ");
+//	  	!decls*;
+//		filter({mmods*, tp1, n1, ps1*, stmts*, collectedExprs*, fNode: 
+//			?|[ ~mmods* ~tp1 ~n1(~prms:ps1*) {
+//					~stmts*				
+//			    }
+//			]|;
+//			?fNode;
+//			debug(!" Found func: ");
+//			!stmts*;
+//			collect({x, e1: ?|[ x = x + e1 ]|});
+//			?collectedExprs*;
+//			<gt> (<length>, 0);
+//			debug(!" Collected exp: ");
+//			!collectedExprs*;
+//			map(!(fNode, <id>))			
+//		});
+//		concat;
+//		?collectedFuncs*; 	
+//		<gt> (<length>, 0);
+//		debug(!" Collected funcs: ");
+//	  	!collectedFuncs*;
+//	  	map(!(clsNode, <id>))
+//	  	});
+//	!(ast, <concat>)
+//	?occurrences;
+//	map(map(length)); debug(!"occurrences by classes: ");
+//	map(sum); sum
+
+//caceffo-A2-rand = 
+//	?(ast, occurrences);
+//	!occurrences;
+//	rand-occurrence;
+//	?(clsNode, (funcNode, expr));
+//	!ast;
+//	oncetd(
+//		?clsNode;
+//		?|[
+//			~mods* class ~someClass {
+//	  			~decls*
+//	  		}
+//	  	]|;	
+//	  	debug(!" Matched class: ");
+//	  	!decls*;
+//		one(?funcNode; 
+//			?|[ ~mmods* ~tp1 ~n1(~prms:ps1*) {
+//					~stmts*				
+//			    }
+//			]|;
+//			debug(!" Found func: ");
+//			!stmts*;
+//			oncetd(?expr; ?|[ x = x + e1 ]|; !|[ addF(x) ]|);
+//			debug(!" Found expr: ");
+//			?mdStmts*;
+//			!mmods*;
+//			!|[ ~mmods* ~tp1 ~n1(~prms:ps1*) {
+//					~mdStmts*				
+//			    }
+//			]|	
+//		);
+//		?mdDecls*; 	
+//		!|[
+//			~mmods* void addF(int x) {
+//				x = x + e1;
+//			}	
+//		]|; 
+//		?newFunc;
+//	  	!|[
+//	  		~mods* class ~someClass {
+//	  			~mdDecls*
+//	  			~newFunc
+//	  		}  	
+//	  	]|
+//  	)
+
+
+//this version should match first method with at least one parameter and capture name 
+//also method has statement that has captured name as left value 
+//??? is return capturedName important or not 
+//1. then we capture second function 
+// 
+caceffo-A3 = 
+	?|[
+		~mods* class ~someName {
+			~decls*
+		}
+	]|;
+	!decls*;
+	oncetd({mmods*, type, f1, args*, stms*:
+		?|[ ~mmods* ~type ~f1(~prms:args*) {
+				~stms*
+			}
+		]|;
+		!stms*;
+		oncetd(?|[ ~xType x = e1; ]|; !$[ ]);
+		?mstms*;
+		!mmods*; ?mmodsOut*;
+		!|[ 
+			~mmods* ~type ~f1(~prms:args*) {
+				~mstms*
+			}
+		]|				
+	}) => modifiedDecls*;
+	!$[init_[x]] => newFuncName;
+	!modifiedDecls*;
+	!|[
+		~mmodsOut* ~xType ~newFuncName(~xType x) {
+			x = e1;
+			return x;
+		}
+	]|;
+	?newFunc;
+	!|[
+		~mods* class ~someName {
+			~newFunc
+			~modifiedDecls*
+		}
+	]|
+	
+	
+//with regex possible but only on the top level (no nested classes) and with capturing whole e1  	
+//caceffo-A3:
+//  	|[
+//  		~mods* class ~someClass {
+//  			~*<oncetd(
+//  				(e |[ e2 + e1 ]| -> e |[ func2(e2) ]|)
+//  				); id => decls*>
+//  		}
+//  	]| -> 
+//  	|[
+//  		~mods* class ~someClass {
+//  			~*decls*
+//  			int func1(int n) {
+//  				n = e1;
+//  				return n;
+//  			}  			
+//  			int func2(int v) {
+//  				return v + n;
+//  			}
+//  		}  	
+//  	]|  	
+//
+////way to build scope
+//new-scope(|stmts*, scope*) =
+//	!stmts*;
+//	collect({ scName, type: 
+//		(?|[ ~type scName; ]| 
+//			<+ ?|[ ~type scName = ~_; ]| 
+//			<+ ?|[ ~_* ~type ~scName(~prms:_*) { ~_* } ]|); 
+//		!(scName, type)}) => newScope*;
+//	!scope*; filter({ x: ?(x, _); not(<fetch(?(x, _))> newScope*)});
+//	<conc> (newScope*, <id>)
+////topdown(try({stmts*: ?blk|[ { ~stmts* } ]| }));	
+////where(<new-scope(|decls*)> []; new-scope(|stmts*); ?scope*);
+//	
+//collect-func(innerMatch) = 
+//	?ast; 
+//	collect-all({ mods*, someClass, decls*, collectedFuncs*, clsNode:
+//	  	?|[
+//			~mods* class ~someClass {
+//	  			~decls*
+//	  		}
+//	  	]|;
+//	  	?clsNode;
+//	  	debug(!" Found class: ");
+//	  	!decls*;
+//		filter({mmods*, tp1, n1, ps1*, stmts*, collectedExprs*, fNode, scope*: 
+//			?|[ ~mmods* ~tp1 ~n1(~prms:ps1*) {
+//					~stmts*				
+//			    }
+//			]|;
+//			?fNode;
+//			debug(!" Found func: ");
+//			!stmts*;			
+//			collect-all(innerMatch(|ast, clsNode, fNode));
+//			?collectedExprs*;
+//			<gt> (<length>, 0);			
+//			!collectedExprs*;
+//			debug(!" Collected exp: ");
+//			map(!(fNode, <id>))			
+//		});
+//		concat;
+//		?collectedFuncs*; 	
+//		<gt> (<length>, 0);
+//		debug(!" Collected funcs: ");
+//	  	!collectedFuncs*;
+//	  	map(!(clsNode, <id>))
+//	  	});
+//	!(ast, <concat>)
+//	
+////simple ids - no filtering on this or super	
+////ExpressionName(Id) - filters out obj.prop expressions - expressions with Ambiguous names
+////Restrictions: cannot query up the tree or relative to current node (similar problem to css?)
+////Restrictions: No global state - I should always pass it around.
+////https://github.com/metaborg/nabl/search?q=nabl2--get-ast-analysis&unscoped_q=nabl2--get-ast-analysis
+//caceffo-A3-occurrences-f(|ast, clsTerm, methTerm) =
+//	?expr;
+//	?|[ e1 + e2 ]|;
+//	debug(!"e1 + e2: ");
+//	!(<origin-line>, <origin-column>);
+//	?(line, column); 	
+//	debug(!" at: ");
+//	!e1; bottomup(not(?DeciDouble(_)); not(?StringLiteral(_)); not(?AmbiguousName(_))); debug(!"e1 passed: "); 
+//	collect({x: ?ExpressionName(Id(x)); !x}); debug(!"e1 ids: "); 
+//	all({ x: ?x; debug(!"e1 x: "); !ast; get-type(|x, expr, line, column); debug(!"e1 type: "); ?NumericType(Int()) });
+//	debug(!"e1 type OK");
+//	!e2; bottomup(not(?DeciDouble(_)); not(?StringLiteral(_)); not(?AmbiguousName(_))); debug(!"e2 passed: "); 
+//	collect({x: ?ExpressionName(Id(x)); !x}); debug(!"e2 ids: "); 
+//	all({ x: ?x; debug(!"e2 x: "); !ast; get-type(|x, expr, line, column); debug(!"e2 type: "); ?NumericType(Int()) });
+//	debug(!"e2 type OK");
+//	!expr
+//	
+//caceffo-A3-occurrences =
+//	collect-func(caceffo-A3-occurrences-f)
+//	
+////should also include filter of this and super from e1 and e2	
+//caceffo-A3-rand = 
+//	?(ast, occurrences);
+//	!occurrences;
+//	rand-occurrence;
+//	?(clsNode, (funcNode, expr));
+//	!ast;
+//	oncetd(
+//		?clsNode;
+//		?|[
+//			~mods* class ~someClass {
+//	  			~decls*
+//	  		}
+//	  	]|;	
+//	  	debug(!" Matched class: ");
+//	  	!decls*;
+//		one(?funcNode; 
+//			?|[ ~mmods* ~tp1 ~n1(~prms:ps1*) {
+//					~stmts*				
+//			    }
+//			]|;
+//			debug(!" Found func: ");
+//			!stmts*;
+//			oncetd(?expr; ?|[ e1 + e2 ]|; !|[ func2(e2) ]|);
+//			debug(!" Found expr: ");
+//			?mdStmts*;
+//			!mmods*;
+//			!|[ ~mmods* ~tp1 ~n1(~prms:ps1*) {
+//					~mdStmts*				
+//			    }
+//			]|	
+//		);
+//		?mdDecls*; 	
+//	  	!|[
+//	  		~mods* class ~someClass {
+//	  			~mdDecls*
+//	  			static int func1(int n) {
+//	  				n = e1;
+//	  				return n;
+//	  			}  			
+//	  			static int func2(int v) {
+//	  				return v + n;
+//	  			}
+//	  		}  	
+//	  	]|
+//  	)
+	
+//	collect-all(
+//	  	|[
+//	  		class ~someClass {
+//	  			~*<oncetd(
+//	  				(e |[ x + e1 ]| -> e |[ func2(x) ]|)
+//	  				); id => decls*>
+//	  		}
+//	  	]| -> 
+//	  	|[
+//	  		class ~someClass {
+//	  			~*decls*
+//	  			int func1(int n) {
+//	  				n = e1;
+//	  				return n;
+//	  			}  			
+//	  			int func2(int x) {
+//	  				return x + n;
+//	  			}
+//	  		}  	
+//	  	]|  	
+  	  	
+//caceffo-A4 =
+//	oncetd(?e |[ y(e1, e2) ]|; debug(!"Found first call: ")); 
+//	oncetd((e |[ y(e2, e1) ]| -> e |[ y(e1, e2) ]|); debug(!"Found pattern: "))  	
+	
+	
+//extract to helper and then define local variables for a and b and provide wrong order in helper()
+caceffo-A4 = 
+	?ast;
+	?|[
+		~mods* class ~someName {
+			~decls*
+		}
+	]|;
+	!decls*;
+	oncetd({mmods*, type, f1, args*, stms*:
+		?|[ ~mmods* ~type ~f1(~prms:args*) {
+				~stms*
+			}
+		]|;
+		debug(!" function found: ");
+		!stms*;
+		oncetd({ stmt:  
+			?stm |[ ~_; ]| => stmt;
+			debug(!" Stmt: ");
+			oncetd({x1, e1, e2, e1Type, e2Type, eType:
+				?|[ e1 - e2 ]|;
+				debug(!" E1 - E2: ");
+				!e1;
+				get-e-type(|ast, <origin-line>, <origin-column>) => e1Type;
+				debug(!" E1 type: ");
+				!e2;
+				get-e-type(|ast, <origin-line>, <origin-column>) => e2Type;
+				debug(!" E2 type: ");
+				![e1Type, e2Type];
+				get-max-type-from-list => eType;
+				debug(!" MAX type: ");
+				!e1Type => type1; !e2Type => type2; !eType => helperType;
+				!e1 => e1Out; !e2 => e2Out;
+				!|[ _helper(p_a, p_b) ]|}) => modifiedStmt;
+			![ |[ ~type1 p_b = ~e1Out; ]|, |[ ~type2 p_a = ~e2Out; ]|, modifiedStmt ]
+			});
+		normalizeList; 
+		?mstms*;
+		!mmods*;		
+		?mmodsOut*;
+		!|[ 
+			~mmods* ~type ~f1(~prms:args*) {
+				~mstms*
+			}
+		]|				
+	});
+	?modifiedDecls*;
+	?newFuncName;
+	!modifiedDecls*;
+	!|[
+		~mmodsOut* ~helperType _helper(~type1 p_a, ~type2 p_b) {
+			return p_a - p_b;
+		}
+	]|;
+	?newFunc;
+	!|[
+		~mods* class ~someName {
+			~newFunc
+			~modifiedDecls*
+		}
+	]|
+
+//caceffo-A5: 
+//  	e |[ x = y(x) ]| -> e |[ y(x) ]|
+
+caceffo-A5 = 
+  	?e |[ ~x = ~f(~args*) ]|;
+  	debug(!"Found expr");
+  	!x; debug(!"X:");
+  	!args*; oncebu(debug(!"e:"); ?x);
+  	debug(!"Has arg");
+  	!e |[ ~f(~args*) ]|
+  	
+//caceffo-A5 = 
+//	?ast;
+//	?|[
+//		~mods* class ~someName {
+//			~decls*
+//		}
+//	]|;
+//	!decls*;
+//	oncetd({mmods*, type, f1, args*, stms*:
+//		?|[ ~mmods* ~type ~f1(~prms:args*) {
+//				~stms*
+//			}
+//		]|;
+//		debug(!" function found: ");
+//		!stms*;
+//		oncetd({x, e:
+//			?|[ x = e; ]|;
+//			!e; not(oncetd(?AmbiguousName(_))); oncetd(?Id(x));
+//			collect({x1: ?Id(x1); not(?Id(x)) }) => otherNames*;
+//			![ x | otherNames ] => fullNames*;
+//			!|[ _helper(~fullNames*) ]|});
+//		normalizeList; 
+//		?mstms*;
+//		!mmods*;		
+//		?mmodsOut*;
+//		!|[ 
+//			~mmods* ~type ~f1(~prms:args*) {
+//				~mstms*
+//			}
+//		]|				
+//	});
+//	?modifiedDecls*;
+//	?newFuncName;
+//	!modifiedDecls*;
+//	!|[
+//		~mmodsOut* ~helperType _helper(~type1 p_a, ~type2 p_b) {
+//			return p_a - p_b;
+//		}
+//	]|;
+//	?newFunc;
+//	!|[
+//		~mods* class ~someName {
+//			~newFunc
+//			~modifiedDecls*
+//		}
+//	]|
+//
+//  	?e |[ ~x = ~f(~args*) ]|;
+//  	debug(!"Found expr");
+//  	!x; debug(!"X:");
+//  	!args*; oncebu(debug(!"e:"); ?x);
+//  	debug(!"Has arg");
+//  	!e |[ ~f(~args*) ]|  	
+  	
+//TODO: we need to check list of arguments - x should be in it 
+//caceffo-A5-complex: 
+//  	e |[ x = y(~<debug(!"Catched: "); fetch(?x); debug(!"Passed: "); id => allPars*>) ]| -> e |[ y(~allPars*) ]|  	
+  	
+//caceffo-A6: 
+//  	e |[ y(x, 2 * z) ]| -> e |[ y(2 * x, z) ]|  
+
+//TODO: check overleaf for wrokflow 
+// cpature e1 - e2 -> extract var1 from e1 and var2 from e2 (constraint it to be expressions with 2 variables) 
+// -> create e3 by replacing var1 by var2 and e4 by var2 to var1. 
+// -> change e1- e2 to helper(e3, e4)
+// -> on class level create helper(var2, var1): e1 - e2
+  	
+caceffo-A6 = 
+	?ast;
+	?|[
+		~mods* class ~someName {
+			~decls*
+		}
+	]|;
+	!decls*;
+	oncetd({mmods*, type, f1, args*, stms*:
+		?|[ ~mmods* ~type ~f1(~prms:args*) {
+				~stms*
+			}
+		]|;
+		debug(!" function found: ");
+		!stms*;
+		oncetd({ stmt:  
+			?stm |[ ~_; ]| => stmt;
+			debug(!" Stmt: ");
+			oncetd({x1, x2, e1, e2, e3, e4, e1Type, e2Type, eType, l, c:
+				?|[ e1 - e2 ]|;
+				debug(!" E1 - E2: ");	
+				!(<origin-line>, <origin-column>) => (l, c);			
+				!e1; 
+				oncebu(?Id(x1));
+				debug(!" X1: ");
+				!e2; 
+				oncebu(?Id(x2); not(?x1));
+				debug(!" X2: ");
+				!e1; 
+				bottomup(try(?x1; !x2)) => e3;
+				debug(!" E3: ");
+				!e2; 
+				bottomup(try(?x2; !x1)) => e4;
+				debug(!" E4: ");
+				!e3;
+				get-e-type(|ast, l, c) => e1Type;
+				debug(!" E3 type: ");
+				!e4;
+				get-e-type(|ast, l, c) => e2Type;
+				debug(!" E4 type: ");
+				![e1Type, e2Type];
+				get-max-type-from-list => eType;
+				debug(!" MAX type: ");
+				!eType => helperType;
+				!x1 => x1Out; !x2 => x2Out;
+				!|[ _helper(e3, e4) ]|}) => modifiedStmt;
+			![modifiedStmt]
+			});
+		normalizeList; 
+		?mstms*;
+		!mmods*;		
+		?mmodsOut*;
+		!|[ 
+			~mmods* ~type ~f1(~prms:args*) {
+				~mstms*
+			}
+		]|				
+	});
+	?modifiedDecls*;
+	?newFuncName;
+	!modifiedDecls*;
+	!|[
+		~mmodsOut* ~helperType _helper(~helperType ~x2Out, ~helperType ~x1Out) {
+			return ~x2Out - ~x1Out;
+		}
+	]|;
+	?newFunc;
+	!|[
+		~mods* class ~someName {
+			~newFunc
+			~modifiedDecls*
+		}
+	]|
+
+  	
+
+//EDITOR RULES  	
+rules
+  		
+//e-caceffo-A1:
+//    (node, _, _, path, project-path) -> (filename, result)
+//    with
+//      filename := <guarantee-extension(|"c-A1.java")> path
+//    ; result   := <try(oncetd(caceffo-A1)); pp-debug> node	
+//
+//e-stats-occurrences-caceffo-A1:
+//    (node, _, _, path, project-path) -> (filename, result)
+//    with
+//      filename := <guarantee-extension(|"c-A1.stats")> path
+//    ; result   := <stats-occurrences(caceffo-A1)> node	
+        
+//e-caceffo-A1-scanf:
+//    (node, _, _, path, project-path) -> (filename, result)
+//    with
+//      filename := <guarantee-extension(|"c-A1-s.java")> path
+//    ; result   := <try(oncetd(caceffo-A1-scanf)); pp-debug> node
+    
+//e-stats-occurrences-caceffo-A1-scanf:
+//    (node, _, _, path, project-path) -> (filename, result)
+//    with
+//      filename := <guarantee-extension(|"c-A1-s.stats")> path
+//    ; result   := <stats-occurrences(caceffo-A1-scanf)> node	    
+    
+e-caceffo-A2:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-A2.java")> path
+    ; result   := <try(oncebu(caceffo-A2)); pp-debug> node	 
+    
+//e-caceffo-A2-v2:
+//    (node, _, _, path, project-path) -> (filename, result)
+//    with
+//      filename := <guarantee-extension(|"c-A2.java")> path
+//    ; result   := <caceffo-A2-occurrences; caceffo-A2-rand; pp-debug> node	     
+
+//e-stats-occurrences-caceffo-A2:
+//    (node, _, _, path, project-path) -> (filename, result)
+//    with
+//      filename := <guarantee-extension(|"c-A2.stats")> path
+//    ; result   := <caceffo-A2-occurrences; ?(_, occurrences); !occurrences; length> node	 
+
+e-stats-occurrences-caceffo-A2:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-A2.stats")> path
+    ; result   := <stats-occurrences(caceffo-A2)> node	 
+    
+e-caceffo-A3:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-A3.java")> path
+    ; result   := <try(oncetd(caceffo-A3)); pp-debug> node
+    
+//e-caceffo-A3-v3:
+//    (node, _, _, path, project-path) -> (filename, result)
+//    with
+//      filename := <guarantee-extension(|"c-A3-3.java")> path
+//    ; result   := <try(oncetd(caceffo-A3-v3)); pp-debug> node
+//    
+//e-caceffo-A3-v2:
+//    (node, _, _, path, project-path) -> (filename, result)
+//    with
+//      filename := <guarantee-extension(|"c-A3.java")> path
+//    ; result   := <caceffo-A3-occurrences; caceffo-A3-rand; pp-debug> node    
+//
+//e-stats-occurrences-caceffo-A3:
+//    (node, _, _, path, project-path) -> (filename, result)
+//    with
+//      filename := <guarantee-extension(|"c-A3.java")> path
+//    ; result   := <caceffo-A3-occurrences; ?(_, occurrences); !occurrences; length> node      
+    
+e-stats-occurrences-caceffo-A3:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-A3.stats")> path
+    ; result   := <stats-occurrences(caceffo-A3)> node      
+    
+e-caceffo-A4:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-A4.java")> path
+    ; result   := <try(oncetd(caceffo-A4)); pp-debug> node	
+
+e-stats-occurrences-caceffo-A4:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-A4.stats")> path
+    ; result   := <stats-occurrences(caceffo-A4)> node	
+    
+e-caceffo-A5:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-A5.java")> path
+    ; result   := <try(oncetd(caceffo-A5)); pp-debug> node
+
+e-stats-occurrences-caceffo-A5:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-A5.stats")> path
+    ; result   := <stats-occurrences(caceffo-A5)> node
+    
+//e-caceffo-A5-complex:
+//    (node, _, _, path, project-path) -> (filename, result)
+//    with
+//      filename := <guarantee-extension(|"c-A5-c.java")> path
+//    ; result   := <try(oncetd(caceffo-A5-complex)); pp-debug> node  
+//
+//e-stats-occurrences-caceffo-A5-complex:
+//    (node, _, _, path, project-path) -> (filename, result)
+//    with
+//      filename := <guarantee-extension(|"c-A5-c.stats")> path
+//    ; result   := <stats-occurrences(caceffo-A5-complex)> node  
+    
+e-caceffo-A6:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-A6.java")> path
+    ; result   := <try(oncetd(caceffo-A6)); pp-debug> node  
+    
+e-stats-occurrences-caceffo-A6:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-A6.stats")> path
+    ; result   := <stats-occurrences(caceffo-A6)> node     
+    
+    
+  		

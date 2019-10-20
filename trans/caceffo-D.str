@@ -1,0 +1,254 @@
+module caceffo-D
+imports
+  src-gen/signatures/metaborg-java-sig
+  pp
+  utils
+	
+rules  
+
+caceffo-D1-while = 
+  	?|[
+  		while(~whileExpr) {
+  			~stmts*
+  		}
+  	]|;
+  	!whileExpr;
+  	collect({ v: ?Id(v); !v });
+  	?whileVars;
+  	debug(!"whileVars:");
+  	!stmts*;
+  	oncebu({ x, e:
+  		debug(!"expr:");
+  		((?|[ x += e; ]|; !whileVars; fetch(?x); !|[ x = e; ]|) <+
+  		 (?|[ x -= e; ]|; !whileVars; fetch(?x); !|[ x = e; ]|) <+
+  		 (?|[ x = e; ]|; !whileVars; fetch(?x); !|[ x += e; ]|) <+
+  		 (?|[ x++; ]|; !whileVars; fetch(?x); !|[ x--; ]|) <+
+  		 (?|[ x--; ]|; !whileVars; fetch(?x); !|[ x++; ]|) <+
+  		 (?|[ ++x; ]|; !whileVars; fetch(?x); !|[ --x; ]|) <+
+  		 (?|[ --x; ]|; !whileVars; fetch(?x); !|[ ++x; ]|)
+  		 )
+	}); 
+  	?updatedStmts*;
+  	debug(!"stmts:");
+  	!|[
+  		while(~whileExpr) {
+  			~updatedStmts*
+  		}
+  	]|
+
+caceffo-D1-for = 
+  	?|[
+  		for(~fori:init;~cond;~forExpr) {
+  			~stmts*
+  		}
+  	]|;
+  	!forExpr;
+  	collect({ v: ?Id(v); !v });
+  	?forVars;
+  	debug(!"forVars:");
+  	!stmts*;
+  	oncebu({ x, e:
+  		debug(!"expr:");
+  		((?|[ x += e; ]|; !forVars; fetch(?x); !|[ x = e; ]|) <+
+  		 (?|[ x -= e; ]|; !forVars; fetch(?x); !|[ x = e; ]|) <+
+  		 (?|[ x = e; ]|; !forVars; fetch(?x); !|[ x += e; ]|) <+
+  		 (?|[ x++; ]|; !forVars; fetch(?x); !|[ x--; ]|) <+
+  		 (?|[ x--; ]|; !forVars; fetch(?x); !|[ x++; ]|) <+
+  		 (?|[ ++x; ]|; !forVars; fetch(?x); !|[ --x; ]|) <+
+  		 (?|[ --x; ]|; !forVars; fetch(?x); !|[ ++x; ]|)
+  		 )
+	}); 
+  	?updatedStmts*;
+  	debug(!"stmts:");
+  	!|[
+  		for(~fori:init;~cond;~forExpr) {
+  			~updatedStmts*
+  		}
+  	]|
+  	
+caceffo-D1 = caceffo-D1-while <+ caceffo-D1-for  	
+  	
+//caceffoD1-sugarred:
+//  	|[
+//  		while(~<where(collect({ v: ?Id(v); !v }) => whileVars*; debug(!"whileVars:")) => whileExpr>) {
+//  			~<oncebu(		  	
+//		  		(|[ ~id:v += ~sm; ]| -> |[ ~id:v = ~sm; ]| where <fetch(?v)>whileVars*) <+
+//		  		(|[ ~id:v += ~sm; ]| -> |[ ~id:v = ~sm; ]| where <fetch(?v)>whileVars*)) => updatedStmts*>
+//  		}
+//  	]| ->
+//	  	|[
+//	  		while(~whileExpr) {
+//	  			~updatedStmts*
+//	  		}
+//	  	]|  	
+  	  	    
+//  editor-caceffoD1-sugarred:
+//    (node, _, _, path, project-path) -> (filename, result)
+//    with
+//      filename := <guarantee-extension(|"mod.jav")> path
+//    ; result   := <try(oncetd(caceffoD1-sugarred)); pp-debug> node   
+    
+
+caceffo-D2 = 
+	?|[
+		~mods* ~tp ~funcN(~prms:params) {
+			~stmts*
+		}
+	]|;
+	!stmts*;
+  	split-fetch-keep({fInit*, cond, inc*, forStmts*: ?|[
+  		for(~fori:fInit*; ~cond; ~inc*) {
+  			~forStmts*
+  		}
+  	]|;  	
+  	!forStmts*;
+  	debug(!"forFound: ");
+  	oncebu({acc: ?|[
+  		~id:acc = ~<oncebu(?Id(acc))>;
+  	]|; !acc; debug(!"accFound: "); ?accOut});
+  	!fInit*; ?fInitOut*;
+  	!cond; ?condOut;
+  	!inc*; ?incOut*;
+  	!forStmts*; ?forStmtsOut*	
+  	}
+  	) => (beforeStmts*, _, [ <oncebu(?Id(acc)); debug(!"nextStmtFound: "); ?someStmt> | leftStmts* ]);
+	!|[
+  		for(~fori:fInitOut*; ~condOut; ~incOut*) {
+  			~forStmtsOut*
+  			~someStmt
+  		}
+  	]|;
+  	?newFor;
+  	!beforeStmts*; debug(!"beforeStmts: ");
+  	!leftStmts*; debug(!"afterStmts: ");  	
+  	!(beforeStmts*, [newFor], leftStmts*);
+  	debug(!"lst: ");
+  	conc;
+  	debug(!"newStmts: ");
+  	?newStmts*;
+  	!|[
+		~mods* ~tp ~funcN(~prms:params) {
+			~newStmts*
+		}  	
+	]|
+
+caceffo-D3-init:
+	|[
+		for(int x = 0; ~cond; ~expr) {
+			~stmts*
+		}
+	]| -> 
+		|[
+			for(int x = 1; ~cond; ~expr) {
+				~stmts*
+			}
+		]|		
+   
+//works on list
+//rnd = 
+//	?lst;
+//	length => l;
+//	<div>(<mul>(<next-random>, l), <get-random-max>) => indx;    
+//	!lst;
+//	index(|indx)
+	
+//caceffo-D3-exit-1: 
+//	|[ e1 < e2 ]| -> |[ e1 > e2 ]|
+ caceffo-D3-exit = 
+	?|[
+		for(~fori:init*; ~cond; ~expr*) {
+			~stmts*
+		}
+	]|;	
+	!cond; 	
+	oncebu((|[ e1 < e2 ]| -> |[ e1 <= e2 ]|) <+ 
+			(|[ e1 > e2 ]| -> |[ e1 >= e2 ]|) <+
+			(|[ e1 == e2 ]| -> |[ e1 != e2 ]|) <+
+			(|[ e1 <= e2 ]| -> |[ e1 < e2 ]|) <+
+			(|[ e1 >= e2 ]| -> |[ e1 > e2 ]|) <+
+			(|[ e1 != e2 ]| -> |[ e1 == e2 ]|));
+	?newCond;
+	!|[
+		for(~fori:init*; ~newCond; ~expr*) {
+			~stmts*
+		}
+	]|		
+    
+caceffo-D3 = caceffo-D3-init <+ caceffo-D3-exit      
+//loop ellimination    
+ caceffo-D5 = 
+	split-fetch-keep(?|[
+		while (~_) {
+			~stmts*
+		}
+	]|) => (before*, _, after*);
+	!(before*, stmts*, after*);
+	conc
+    
+//D4 is ~D3 and too generic    
+//D6 is arguable - loop is correct - incorrect bool or init
+
+//EDITOR RULES
+rules
+
+  e-caceffo-D1:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-D1.java")> path
+    ; result   := <try(oncetd(caceffo-D1)); pp-debug> node  
+
+  e-stats-occurrences-caceffo-D1:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-D1.stats")> path
+    ; result   := <stats-occurrences(caceffo-D1)> node  
+    
+  e-caceffo-D2:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-D2.java")> path
+    ; result   := <try(oncetd(caceffo-D2)); pp-debug> node  
+
+  e-stats-occurrences-caceffo-D2:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-D2.stats")> path
+    ; result   := <stats-occurrences(caceffo-D2)> node 
+        
+  e-caceffo-D3:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-D3-i.java")> path
+    ; result   := <try(oncetd(caceffo-D3)); pp-debug> node 
+
+  e-stats-occurrences-caceffo-D3:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-D3-i.stats")> path
+    ; result   := <stats-occurrences(caceffo-D3)> node 
+    
+//  e-caceffo-D3-exit:
+//    (node, _, _, path, project-path) -> (filename, result)
+//    with
+//      filename := <guarantee-extension(|"c-D3-e.java")> path
+//    ; result   := <try(oncetd(caceffo-D3-exit)); pp-debug> node      
+//
+//  e-stats-occurrences-caceffo-D3-exit:
+//    (node, _, _, path, project-path) -> (filename, result)
+//    with
+//      filename := <guarantee-extension(|"c-D3-e.stats")> path
+//    ; result   := <stats-occurrences(caceffo-D3-exit)> node      
+    
+  e-caceffo-D5:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-D5.java")> path
+    ; result   := <try(oncetd(caceffo-D5)); pp-debug> node
+    
+  e-stats-occurrences-caceffo-D5:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-D5.stats")> path
+    ; result   := <stats-occurrences(caceffo-D5)> node    
+    
+

@@ -1,0 +1,43 @@
+module OOP
+imports
+  src-gen/signatures/metaborg-java-sig
+  pp
+	
+rules  
+
+ //OOP bugs
+ //1. Constructor name should be same as class name - ruin this 
+ //2. Remove field - assume that constructor param is visible in class 
+ //3. Return with value in constructor!
+ //4. Return type correspondance - return 42 -> return "42";
+ //5. Return missing in one of branches
+ //6. Pass less then necessary number of parameters to constructor - or call wrong constructor.
+ //7. Remove initialization from field variables in constructor
+ //8. setField(...) method call to field = ... with private variable. 
+ //9. Mutator with return ??? 
+ //10. Remove ternary operator or Math.max in field assignment in setter to ruin validation
+ //11. this.name = name --> name = name; //name of instance variable is same to name of parameter - parameter shadows
+ //12. (from me) this to self, this to super
+ //13. remove type cast (int) or add . to int literals; 
+ //14. add final to mutated variable 
+ //15. inline complex computation from var to do it several times 
+ //16. Replace length of array to fun call of length which uses arr.length
+ 
+//test: |[ return 42; ]| -> |[ return 43; ]|
+
+ //test = ?e|[ return e1; ]|
+  
+ remove-field-as-param = 
+ 	?|[
+ 		public void ~constName(~prms:args*) {
+ 		}
+ 	]|
+
+
+//EDITOR RULES
+rules
+  e-remove-field-as-param:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"mod.jav")> path
+    ; result   := <try(oncetd(e-remove-field-as-param)); pp-debug> node    	

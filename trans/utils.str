@@ -1,0 +1,181 @@
+module utils
+imports
+  src-gen/signatures/metaborg-java-sig
+  pp
+  libspoofax/term/origin
+	
+rules
+
+with-occurrences(str) = 
+	?input;
+	![("cnt", 0)];
+	hashtable-init;
+	?stats;
+	!input;
+	topdown(try({ cnt, transformResult: 
+		str; ?transformResult;
+		!stats; hashtable-get(|"cnt"); ?cnt; !stats; hashtable-put(|"cnt", <inc> cnt);
+		!transformResult
+	  }));
+	?output;
+	!(<hashtable-get(|"cnt")> stats, <pp-debug> output)	
+	
+stats-occurrences(str) = 
+	?input;
+	![("cnt", 0)];
+	hashtable-init;
+	?stats;
+	!input;
+	topdown(try({ cnt, transformResult: 
+		str; ?transformResult;
+		!stats; hashtable-get(|"cnt"); ?cnt; !stats; hashtable-put(|"cnt", <inc> cnt);
+		!transformResult
+	  }));
+	!<hashtable-get(|"cnt")> stats	
+	
+//rand does not work well - get-rand-max return exception and no functions to convert real to int	
+rand-occurrence-debug = 
+	?occurrences;
+	map(!(<next-random>, <id>));
+	debug(!"with rand: ");
+	qsort({ f, s: ?((f, _), (s, _)); !(f, s); lt});
+	debug(!"sorted: ");
+	map({el: ?(_, el); !el});
+	debug(!"back: ");
+	?[head | _]; !head; debug(!"elem: ")
+	
+rand-occurrence = 
+	?occurrences;
+	map(!(<next-random>, <id>));
+	qsort({ f, s: ?((f, _), (s, _)); !(f, s); lt});
+	map({el: ?(_, el); !el});
+	?[head | _]; !head
+	
+normalizeList =  
+	topdown(try(is-list; flatten-list))
+	
+	
+//should be run on expression	
+get-e-literal-types = 
+	collect(((?"DeciFloat"#(_) <+ ?"HexFloat"#(_)); !|[ float ]|) <+ 
+		   ((?"DeciDouble"#(_) <+ ?"HexDouble"#(_)); !|[ double ]|) <+			
+		   ((?"Deci"#(_) <+ ?"Octa"#(_) <+ ?"Hexa"#(_) <+ ?"Bin"#(_)); !|[ int ]|))
+	
+get-e-var-types(|ast, line, column) =
+	?e; 
+	not(?"AmbiguousName"#(_)); //for now we fail e match on case of some property - this is TODO
+	collect({name: ?Id(name); !name});	
+	debug(!"Collected vars: ");
+	map({scopeName: 
+		?scopeName;
+		!ast;
+		get-type(|scopeName, line, column) 
+		})
+	//debug(!"List of types for max: ");
+	//get-max-type-from-list	
+	
+//get-max-type(|type1, type2) = 
+//	!(type1, type2);
+//	debug(!"get-max-type tuple:");
+//	(?(|[ double ]|, _); !type1) <+
+//	(?(_, |[ double ]|); !type2) <+
+//	(?(|[ float ]|, _); !type1) <+
+//	(?(_, |[ float ]|); !type2) <+	
+//	(?(|[ long ]|, _); !type1) <+
+//	(?(_, |[ long ]|); !type2) <+
+//	(?(|[ int ]|, _); !type1) <+
+//	(?(_, |[ int ]|); !type2) <+ !type1 //TODO: extend 
+
+//TODO: extend 
+get-max-type-from-list = 
+	fetch-elem(?|[ double ]|) <+
+	 fetch-elem(?|[ float ]|) <+	
+	 fetch-elem(?|[ long ]|) <+
+	 fetch-elem(?|[ int ]|)	
+		
+//<+ (!mods*; fetch(?Static()); !None(); ?type)); //we assume that initial program is correct - no necessary to check
+//PROBLEM with implementation: pattern matching of form ?Id(x) - captures all existance of x - so termination does not work
+//cannot distinguish between two instances of two subtrees.
+get-type(|scopeName, line, column) =	
+	?ast;
+	![];
+	hashtable-init; 
+	?resTable; 
+	!ast;	
+	(downup(not(!(<origin-line>, <origin-column>); ?(line, column); debug(!"stop term reached: ")); 
+		where(
+		({type, decls*, mods*, cls: 
+		 ?|[ ~mods* class ~_ { ~decls* } ]|;
+		 ?cls;
+		 debug(!"entering: ");
+		 !decls*; 
+		 fetch(?field |[ ~type ~scopeName; ]| <+ ?|[ ~_ ~type ~scopeName(~prms:_) { ~_ } ]|);		  
+		 debug(!"found: "); 
+		 <hashtable-push(|scopeName, (cls, type))> resTable})
+		<+
+		({type, args*, func, mmods*: //TODO: wildcard for mmods list does not work - fix EmbeddedJava
+		 ?|[ ~mmods* ~_ ~_(~args*) { ~*_ } ]|;
+		 ?func; 
+		 debug(!"entering: ");
+		 !args*;
+		 //debug(!"args: ");
+		 //!param |[ int ~scopeName ]|;
+		 //debug(!"searching for: ");
+		 //!args*; 
+		 fetch(?param |[ ~type ~scopeName ]|); 
+		 debug(!"found: "); 
+		 <hashtable-push(|scopeName, (func, type))> resTable})
+		<+
+		({type, forip*, for, inc*:  //TODO: wildcard for inc list does not work - fix EmbeddedJava 
+		 ?|[ for(~fori:forip*; ~_; ~inc*) { ~*_ } ]|;
+		 ?for; 
+		 debug(!"entering: "); 
+		 !forip*; 
+		 fetch(?|[ ~type ~scopeName; ]| <+ ?|[ ~type ~scopeName = ~_; ]|); 		
+		 debug(!"found: ");  
+		 <hashtable-push(|scopeName, (for, type))> resTable})		 
+		<+ 
+		({ type, blk: ?blk|[ { ~*_ } ]|; //class body is not a block, block is block of statements
+		 ?blk;
+		 debug(!"entering: ");
+		 (({type: <hashtable-peek(|scopeName)> resTable => (_, type); !type}) <+ !None());
+		 ?type; 
+		 <hashtable-push(|scopeName, (blk, type))> resTable})
+		<+ 
+		({ type, parent: 
+		   (?|[ ~type ~scopeName; ]| <+ ?|[ ~type ~scopeName = ~_; ]|);
+		   debug(!"found local: ");
+		   <hashtable-peekpop(|scopeName)> resTable => (parent, _);
+		   <hashtable-push(|scopeName, (parent, type))> resTable
+		 }) 
+		<+ 
+		id),
+		where({currentNode, scope: 
+		  ?currentNode;
+		  //debug(!"exiting, current : "); 
+		  !resTable;
+		  //hashtable-get(|scopeName);
+		  //debug(!"VALUE : ");		  
+		  <hashtable-peek(|scopeName)> resTable => (scope, _);
+		  <equal> (scope, currentNode);
+		  !scope; 
+		  debug(!"exiting: ");
+		  <hashtable-pop(|scopeName)> resTable
+		  }) <+ id)
+	 <+ (<hashtable-peekpop(|scopeName)> resTable => (_, type); !type; debug(!"FOUND: ")) 
+	 <+ None())
+	
+ //!(<origin-line>, <origin-column>) => (line, column);
+get-e-type(|ast, line, column) = 			
+	?e;
+	debug(!"Inferring type for Expr: ");
+	get-e-literal-types => eLiterals;
+	debug(!"literal types: ");
+	!e;
+	get-e-var-types(|ast, line, column) => eVars;
+	debug(!"var types: ");
+	!(eLiterals, eVars);
+	conc; 
+	debug(!"types: ");
+	get-max-type-from-list => foundType;
+	debug(!"Inferred type is: ")	 	

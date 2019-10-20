@@ -1,0 +1,203 @@
+module caceffo-E
+imports
+  src-gen/signatures/metaborg-java-sig
+  pp
+  utils
+	
+rules  
+
+//class equality
+ caceffo-E1-field(|field) = 
+ 	?|[ ~obj1.~field == ~obj2.~field ]|;
+ 	!(obj1, obj2)
+ 	
+//more complex pattern matching - with context
+caceffo-E1 = 
+	?|[ 
+		~p1.equals(e)
+	]|;
+	!|[ 
+		~p1 == e
+	]| 	
+// caceffo-E1-v1 = 
+//	?|[
+//		~mods* class ~someClass {
+//			~defs*
+//		}
+//	]|;
+//	!defs*;
+//	oncetd({ nestedMods*, nestedName, nestedDefs*, field1, field2, objNames*: 
+//		?|[
+//			~nestedMods* class ~nestedName {
+//				~nestedDefs*
+//			}
+//		]|;
+//		debug(!"nested: ");
+//		!nestedDefs*;
+//		collect({ var: (?field |[ public ~_ ~var; ]| <+ ?field |[ public ~_ ~var = ~_; ]|); !var});
+//		?[ field1 | [ field2 | []]]; //only two props
+//		debug(!"fields: ");
+//		!defs*;
+//		collect({ obj: (?|[ ~<?ClassType(Id(nestedName), _)> ~obj; ]| <+ ?|[ ~<?ClassType(Id(nestedName), _)> ~obj = ~_; ]|); !obj });
+//		debug(!"objNames: ");
+//		?objNames*;
+//		!defs*;
+//		oncetd({ e1, e2: ?|[ e1 && e2 ]|;
+//			debug(!"expr: ");
+//			({ obj1, obj2: 
+//				!e1; caceffo-E1-field(|field1); ?(obj1, obj2); 
+//				debug(!"objs: ");
+//				!e2; caceffo-E1-field(|field2); ?(obj1, obj2); 
+//				debug(!"objs2: ");
+//				!objNames*; fetch(?obj1); 
+//				!objNames*; fetch(?obj2); 
+//				!obj1; ?obj1Out; !obj2; ?obj2Out } <+
+//			 { obj1, obj2: 
+//			 	!e1; caceffo-E1-field(|field2); ?(obj1, obj2); 
+//			 	debug(!"objs: ");
+//			 	!e2; caceffo-E1-field(|field1); ?(obj1, obj2);
+//			 	debug(!"objs2: "); 
+//			 	!objNames*; fetch(?obj1); 
+//			 	!objNames*; fetch(?obj2);
+//			 	!obj1; ?obj1Out; !obj2; ?obj2Out });
+//			!|[ ~obj1Out == ~obj2Out ]|
+//		});
+//		?newDefs*
+//		});
+//	!|[
+//		~mods* class ~someClass {
+//			~newDefs*
+//		}
+//	]|	
+    
+//simple version    
+//caceffo-E1-v2: 
+//	|[
+//		~obj1.~field1 == ~obj2.~field1 && ~obj1.~field2 == ~obj2.~field2
+//	]| -> 
+//	|[
+//		~obj1 == ~obj2
+//	]|    	
+    
+//can be represented with regex    
+caceffo-E2: 
+	|[
+		~obj1.~field1 == ~obj2.~field1
+	]| -> 
+	|[
+		~obj1.~field1 == ~obj2
+	]|    	
+    
+caceffo-E3: 
+	e |[
+		~obj1.~field1
+	]| -> $[ [obj1]->[field1] ]    	
+
+caceffo-E4: 
+	e |[
+		~obj1.~field1
+	]| -> |[ ~obj1[~field1] ]|    	
+        
+caceffo-E5 = 
+	?|[
+		~mods* ~type ~f(~prms:args*) {
+			~decls*
+		}
+	]|;
+	!f;
+	debug(!"funcFound: ");
+	!decls*;
+	oncetd({ type, obj: 
+		(?|[ ~<?ClassType(Id(type), _)> ~obj; ]| <+ ?|[ ~<?ClassType(Id(type), _)> ~obj = ~_; ]|);
+		!type;
+		debug(!"type: ");
+		!obj;
+		debug(!"obj: ");
+		!decls*;
+		oncetd(?e |[ ~obj.~field ]|; debug(!"field: "); !$[[type] [obj].[field]]; debug(!"localDecl: "));
+		debug(!"modifiedDecls: ");
+		?modifiedDecls*		
+		});
+	!|[
+		~mods* ~type ~f(~prms:args*) {
+			~bstm*:modifiedDecls*
+		}
+	]|	 
+
+//EDITOR RULES goe here
+rules
+
+  e-caceffo-E1:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-E1-1.java")> path
+    ; result   := <try(oncetd(caceffo-E1)); pp-debug> node   
+
+  e-stats-occurrences-caceffo-E1:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-E1-1.stats")> path
+    ; result   := <stats-occurrences(caceffo-E1)> node   
+    
+// e-caceffo-E1-v2:
+//    (node, _, _, path, project-path) -> (filename, result)
+//    with
+//      filename := <guarantee-extension(|"c-E1-2.java")> path
+//    ; result   := <try(oncetd(caceffo-E1-v2)); pp-debug> node      
+//    
+// e-stats-occurrences-caceffo-E1-v2:
+//    (node, _, _, path, project-path) -> (filename, result)
+//    with
+//      filename := <guarantee-extension(|"c-E1-2.stats")> path
+//    ; result   := <stats-occurrences(caceffo-E1-v2)> node         
+    
+ e-caceffo-E2:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-E2.java")> path
+    ; result   := <try(oncetd(caceffo-E2)); pp-debug> node      
+
+ e-stats-occurrences-caceffo-E2:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-E2.stats")> path
+    ; result   := <stats-occurrences(caceffo-E2)> node  
+        
+ e-caceffo-E3:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-E3.java")> path
+    ; result   := <try(oncetd(caceffo-E3)); pp-debug> node     
+
+ e-stats-occurrences-caceffo-E3:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-E3.stats")> path
+    ; result   := <stats-occurrences(caceffo-E3)> node     
+    
+ e-caceffo-E4:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-E4.java")> path
+    ; result   := <try(oncetd(caceffo-E4)); pp-debug> node    
+
+ e-stats-occurrences-caceffo-E4:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-E4.stats")> path
+    ; result   := <stats-occurrences(caceffo-E4)> node    
+    
+ e-caceffo-E5:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-E5.java")> path
+    ; result   := <try(oncetd(caceffo-E5)); pp-debug> node  
+    
+ e-stats-occurrences-caceffo-E5:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-E5.stats")> path
+    ; result   := <stats-occurrences(caceffo-E5)> node  
+    
+    
+    

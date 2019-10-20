@@ -1,0 +1,11 @@
+module d-test
+imports 
+    src-gen/signatures/metaborg-java-sig
+
+rules 
+
+  e-gp-poc: 
+  	(node, _, _, path, project-path) -> (filename, result) 
+  	with 
+  		filename := <guarantee-extension(|"d-test.jav")> path
+  		; result := node

@@ -1,0 +1,14 @@
+module Main
+
+imports
+
+  Syntax  
+  Transforms
+
+language
+
+  extensions : jav
+
+  provider : target/metaborg/stratego.ctree
+
+  context : none

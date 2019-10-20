@@ -1,0 +1,113 @@
+module caceffo-G
+imports
+  src-gen/signatures/metaborg-java-sig
+  pp
+  utils
+	
+rules 
+
+caceffo-G1-v1:
+ 	|[ e1 && (e2 || e3) ]| -> |[ (e1 && e2) || e3 ]|  
+    
+caceffo-G1-v2:
+ 	|[ (e1 && e2) || e3 ]| -> |[ e1 && (e2 || e3) ]|  
+ 	
+caceffo-G1 =
+	(|[ e1 && (e2 || e3) ]| -> |[ (e1 && e2) || e3 ]|) <+
+	(|[ (e1 && e2) || e3 ]| -> |[ e1 && (e2 || e3) ]|) <+
+	(|[ e1 && e2 ]| -> |[ e1 || e2 ]|) <+
+	(|[ e1 || e2 ]| -> |[ e1 && e2 ]|)
+		 
+    
+//NOTE: length of stmts could be checked to enforce additional limits 		
+caceffo-G2:
+ 	|[ 
+ 		if (e1 && (e2 || e3)) {
+ 			~stmts*
+ 		}
+ 	]| -> |[ 
+ 		if (e1) {
+ 			if (e2) {
+ 				~stmts*
+ 			} else {
+	 			if (e3) {
+	 				~stmts*
+	 			}
+ 			}
+ 		} ]|  
+     		
+caceffo-G3: |[ e1 && (e2 || e3) ]| -> |[ (e1 + e2 + e3 >= 2) ]|  		
+    
+caceffo-G4:
+ 	|[ 
+ 		if (e1) {
+ 			~stmts*
+ 		}
+ 	]| -> |[ 
+ 		while (e1) {
+ 			~stmts*
+ 		} ]|  		
+
+//RULES for editor
+rules
+
+e-caceffo-G1:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-G1.java")> path
+    ; result   := <try(oncetd(caceffo-G1)); pp-debug> node   
+
+e-stats-occurrences-caceffo-G1:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-G1-1.stats")> path
+    ; result   := <stats-occurrences(caceffo-G1)> node   
+    
+//e-caceffo-G1-v2:
+//    (node, _, _, path, project-path) -> (filename, result)
+//    with
+//      filename := <guarantee-extension(|"c-G1-2.java")> path
+//    ; result   := <try(oncetd(caceffo-G1-v2)); pp-debug> node   
+//
+//e-stats-occurrences-caceffo-G1-v2:
+//    (node, _, _, path, project-path) -> (filename, result)
+//    with
+//      filename := <guarantee-extension(|"c-G1-2.stats")> path
+//    ; result   := <stats-occurrences(caceffo-G1-v2)> node   
+    
+e-caceffo-G2:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-G2.java")> path
+    ; result   := <try(oncetd(caceffo-G2)); pp-debug> node  
+
+e-stats-occurrences-caceffo-G2:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-G2.stats")> path
+    ; result   := <stats-occurrences(caceffo-G2)> node  
+    
+e-caceffo-G3:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-G3.java")> path
+    ; result   := <try(oncetd(caceffo-G3)); pp-debug> node   
+
+e-stats-occurrences-caceffo-G3:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-G3.stats")> path
+    ; result   := <stats-occurrences(caceffo-G3)> node   
+    
+e-caceffo-G4:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-G4.java")> path
+    ; result   := <try(oncetd(caceffo-G4)); pp-debug> node        
+    
+e-stats-occurrences-caceffo-G4:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-G4.stats")> path
+    ; result   := <stats-occurrences(caceffo-G4)> node        
+    

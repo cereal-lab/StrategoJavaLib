@@ -1,0 +1,635 @@
+module caceffo-B
+imports
+  src-gen/signatures/metaborg-java-sig
+  pp
+  utils
+	
+rules  
+  
+//  caceffo-B1-v1:
+//  	|[
+//  		class ~someClass {
+//  			~*<oncetd(
+//  				(|[ ~type ~func(~params*) {
+//  					~*<oncetd(?|[ ~type2 x1 = e1; ]| <+ ?|[~type2 x1;]|);
+//  					   oncetd(?|[ ~type3 x2 = e2; ]|; not(<eq>(x1,x2)) <+ ?|[~type3 x2;]|);
+//  					   oncetd(?|[ ~type4 x3 = e3; ]| <+ ?|[~type4 x2;]|);
+//  					   oncetd((e|[ ~<not(oncetd(?LHS)); oncetd(?e|[ x1 ]|); oncetd(?e|[ x2 ]|); oncetd(?e|[ x3 ]|); id => e100> ]| -> e |[ funcB1(x1, x2) ]|));
+//  					   id => stmts*
+//  					>
+//  				 } ]| -> |[ 
+//  				 ~type ~func(~params*) {
+//  				 	~*stmts*
+//  				 }
+//  				  ]|)
+//  				); id => decls*>
+//  		}
+//  	]| -> |[
+//		  		class ~someClass {
+//		  			~*decls*
+//		  			int funcB1(~type2 x1, ~type3 x2) {
+//		  				return ~e100;
+//		  			}
+//		  		}   				
+//  		   ]|
+//  		   
+//  caceffo-B1-v2:
+//  	|[
+//  		class ~someClass {
+//  			~*<oncetd(
+//  				(|[ ~type ~func() {
+//  					~*<oncetd(?|[ ~type2 x1 = e1; ]|);  //note that ?x1 rewrites id strategy so final statement transforms to x1
+//  					   oncetd(debug(!"x2 found MAYBE: "); ?|[ ~type3 x2 = e2; ]|; debug(!"x2 found MAYBE 2: "); not(equal(|x1)); debug(!"x2 found: "));
+//  					   oncetd((|[ ~type4 ~<debug(!"x3 found MAYBE: "); not(equal(|x1)); not(equal(|x2)); debug(!"x3 found: "); id => x3> = e3; ]| -> |[ ~type4 x3 = e3; ]|));
+//  					   oncetd((e |[ ~<
+//  					   		debug(!"LHS? "); not(oncetd(?VariableDeclInit(_, _))); debug(!"has no LHS: "); 
+//  					   		oncetd(?e|[ x1 ]|); debug(!"has not LHS and has x1"); 
+//  					   		oncetd(?e|[ x2 ]|); 
+//  					   		debug(!"has not LHS and has x1, x2");
+//  					   		oncetd(?e|[ x3 ]|); 
+//  					   		debug(!"has not LHS and has x1, x2, x3");
+//  					   		id => e100>
+//  					   		]| -> 
+//  					   		|[ funcB1() ]|));
+//  					   id => stmts*
+//  					>
+//  				 } ]| -> |[ 
+//  				 ~type ~func() {
+//  				 	~*stmts*
+//  				 }
+//  				  ]|)
+//  				); id => decls*>
+//  		}
+//  	]| -> |[
+//		  		class ~someClass {
+//		  			~*decls*
+//		  			int funcB1(~type2 x1, ~type3 x2) {
+//		  				return e100;
+//		  			}
+//		  		}   				
+//  		   ]|  	
+//  		   
+//   //verbose
+//   caceffo-B1-v3: 
+//  	|[
+//  		class ~someClass {
+//  			~decls*
+//  		}
+//  	]| -> |[
+//		  		class ~someClass {
+//		  			~modifiedDecls*
+//		  			int funcB1(~type2 x1, ~type3 x2) {
+//		  				return e100;
+//		  			}
+//		  		}   				
+//  		   ]|  	
+//     where 
+//		<oncetd(
+//		(|[ ~type ~func() {
+//				~stmts*
+//		 	} 
+//		 ]| -> 
+//		 	|[ 
+//				 ~type ~func() {
+//				 	~modifiedStmts*
+//				 }
+//		  	]|
+//		  	where 
+//		  		<oncetd(?|[ ~type2 x1 = e1; ]|)>stmts*; <debug(!"x1: ")>x1;
+//		  		<oncetd({ type30, x20, e2: ?|[ ~type30 x20 = e2; ]|; <not(equal)>(x1, x20); !type30 => type3; !x20 => x2})>stmts*; <debug(!"x2: ")>x2;
+//		  		<oncetd({ type4, x30, e3: ?|[ ~type4 x30 = e3; ]|; <not(equal)>(x1, x30); <not(equal)>(x2, x30); !x30 => x3})>stmts*; <debug(!"x3: ")>x3;
+//			    <oncetd((e |[ ~<
+//			   		debug(!"LHS? "); not(oncetd(?VariableDeclInit(_, _))); debug(!"has no LHS: "); 
+//			   		oncetd(?e|[ x1 ]|); debug(!"has not LHS and has x1"); 
+//			   		oncetd(?e|[ x2 ]|); 
+//			   		debug(!"has not LHS and has x1, x2");
+//			   		oncetd(?e|[ x3 ]|); 
+//			   		debug(!"has not LHS and has x1, x2, x3");
+//			   		id => e100>
+//			   		]| -> 
+//			   			|[ funcB1(x1, x2) ]|))>stmts*	=> modifiedStmts*	  		
+//	  	))>decls* => modifiedDecls*   
+//	  	
+//  caceffo-B1-v4:
+//  	|[
+//  		~cmods* class ~someClass {
+//  			~*<oncetd(
+//  				(|[ ~type ~func() {
+//  					~*<oncetd(where(?|[ ~type2 x1 = e1; ]|; <debug(!"x1: ")>x1));  //note that ?x1 rewrites id strategy so final statement transforms to x1
+//  					   oncetd(where({ type30, x20, e2: ?|[ ~type30 x20 = e2; ]|; <debug(!"x2?: ")>x20; <not(equal)>(x1, x20); <debug(!"x2: ")>x20;  !x20 => x2; !type30 => type3}));
+//  					   oncetd(where({ type40, x30, e3: ?|[ ~type40 x30 = e3; ]|; <debug(!"x3?: ")>x30; <not(equal)>(x1, x30); <not(equal)>(x2, x30); <debug(!"x3: ")>x30;  !x30 => x3; !type40 => type4 }));
+//  					   oncetd((e |[ ~<  					   		 
+//  					   		oncetd(?e|[ x1 ]|); debug(!"has not LHS and has x1"); 
+//  					   		oncetd(?e|[ x2 ]|); 
+//  					   		debug(!"has not LHS and has x1, x2: ");
+//  					   		oncetd(?e|[ x3 ]|); 
+//  					   		debug(!"has not LHS and has x1, x2, x3: ");
+//  					   		debug(!"LHS? "); not(oncetd(?VariableDeclInit(_, _))); debug(!"has no LHS: ");
+//  					   		id => e100>
+//  					   		]| -> 
+//  					   		|[ funcB1(x1, x2) ]|));
+//  					   id => stmts*
+//  					>
+//  				 } ]| -> |[ 
+//  				 ~type ~func() {
+//  				 	~*stmts*
+//  				 }
+//  				  ]|)
+//  				); id => decls*>
+//  		}
+//  	]| -> |[
+//		  		~cmods* class ~someClass {
+//		  			~*decls*
+//		  			int funcB1(~type2 x1, ~type3 x2) {
+//		  				return e100;
+//		  			}
+//		  		}   				
+//  		   ]|  		  	  	
+  
+  //simple
+//  caceffo-B1-v5 = 
+//  	?|[
+//  		class ~someClass {
+//  			~decls*
+//  		}
+//  	]|;
+//  	debug(!"found class: ");
+//  	<oncetd({ type, func, stmts*:
+//  		?|[
+//			~type ~func() {
+//				~stmts*
+//		 	}  		
+//  		]|;
+//  		debug(!"found func: ");
+//		<collect({tp, x, e: 
+//			?|[ ~tp x = e; ]|; 
+//			!(x, tp)}); 
+//			hashtable-init>stmts* => foundVars*;
+//		debug(!"collected vars: ");
+//		<oncebu(?Add(_, _); 
+//			where(debug(!"test expr: "); 
+//				collect({x: ?Id(x); 
+//				<hashtable-get(|x)>foundVars*; !x}); 
+//				debug(!"curr vars: "); 
+//				?[ x1 | [ x2 | [ x3 | _] ]]) => e100; 
+//			debug(!"e100: "); 
+//			!|[ funcB1(x1, x2) ]|)>stmts* => newStmts*;  			
+//		debug(!"updates stmts: ");
+//		<debug(!"x1: ")>x1;
+//		<debug(!"x2: ")>x2;
+//		<debug(!"x3: ")>x3;
+//		!|[
+//			~type ~func() {
+//				~newStmts*
+//		 	}  			
+//		]|
+//	})>decls* => updatedDecls*;
+//	!|[
+//  		class ~someClass {  			 		
+//  			~updatedDecls*
+//			int funcB1(~<hashtable-get(|x1)>foundVars* x1, ~<hashtable-get(|x2)>foundVars* x2) {
+//	  				return e100;
+//	  			}  			
+//  		}   				
+//    ]|  
+
+/*
+  caceffoB1-simple-no-debug = 
+  	?|[
+  		class ~someClass {
+  			~decls*
+  		}
+  	]|;
+  	<oncetd({ type, func, stmts*:
+  		?|[
+			~type ~func() {
+				~stmts*
+		 	}  		
+  		]|;
+		<collect({tp, x, e: 
+			?|[ ~tp x = e; ]|; 
+			!(x, tp)}); 
+			hashtable-init>stmts* => foundVars*;
+		<oncebu(?Add(_, _); 
+			where(collect({x: ?Id(x); 
+				<hashtable-get(|x)>foundVars*; !x}); 
+				?[ x1 | [ x2 | [ x3 | _] ]]) => e100; 
+			!|[ funcB1(x1, x2) ]|)>stmts* => newStmts*;  			
+		!|[
+			~type ~func() {
+				~newStmts*
+		 	}  			
+		]|
+	})>decls* => updatedDecls*;
+	!|[
+  		class ~someClass {  			 		
+  			~updatedDecls*
+			int funcB1(~<hashtable-get(|x1)>foundVars* x1, ~<hashtable-get(|x2)>foundVars* x2) {
+	  				return e100;
+	  			}  			
+  		}   				
+    ]|  
+*/
+
+//  caceffo-B1 = 
+//  	oncetd(
+//	  	?|[
+//	  		~cmods* class ~someClass {
+//	  			~decls*
+//	  		}
+//	  	]|;
+//	  	!decls*;
+//	  	oncetd({ fmods*, type, func, stmts*, args*:
+//	  		?|[
+//				~fmods* ~type ~func(~prms:args*) {
+//					~stmts*
+//			 	}  		
+//	  		]|;
+//	  		!stmts*;
+//			collect({tp, x, e: 
+//				?|[ ~tp x = e; ]|; 
+//				!(x, tp)});		
+//			?foundVars*;
+//			!stmts*;
+//			oncebu({ e99:		 
+//				?e99;
+//				collect({x: 
+//					?Id(x); 
+//					!foundVars*;
+//					debug(!"vars:");
+//					fetch(?(x, _)); 
+//					debug(!"found: ");
+//					!x}); 
+//					?[ x1 | [ x2 | [x3 | _ ]] ];
+//				!e99;			
+//				?e100; 
+//				!|[ funcB1(x1, x2) ]|
+//				});
+//			?newStmts*;
+//			!|[
+//				~fmods* ~type ~func(~prms:args*) {
+//					~newStmts*
+//			 	}  			
+//			]|
+//		});
+//		?updatedDecls*;
+//		!foundVars*;
+//		fetch(?(x1, type1));
+//		!foundVars*;
+//		fetch(?(x2, type2));
+//		!|[
+//	  		~cmods* class ~someClass {  			 		
+//	  			~updatedDecls*
+//				~type1 funcB1(~type1 x1, ~type2 x2) {
+//		  				return e100;
+//		  			}  			
+//	  		}   				
+//	    ]|);  
+//	pp-debug
+
+  caceffo-B1 = 
+	  	?|[
+	  		~cmods* class ~someClass {
+	  			~decls*
+	  		}
+	  	]|;
+	  	!decls*;
+	  	oncetd({ fmods*, type, func, stmts*, args*, foundVars*:
+	  		?|[
+				~fmods* ~type ~func(~prms:args*) {
+					~stmts*
+			 	}  		
+	  		]|;
+	  		!stmts*;
+			where(collect(?|[ ~_ ~_ = ~_; ]|) => foundVars*);			
+			topdown(try({node: ?node; !(node, foundVars*); elem;
+				!$[]			
+			})) => newStmts*;
+			!$[init_[func]] => initFuncName;
+			!|[
+				~fmods* void ~initFuncName() {
+					~foundVars*
+				}
+			]|;
+			normalizeList => initFunc;
+			!|[
+				~fmods* ~type ~func(~prms:args*) {
+					~newStmts*
+			 	}  			
+			]|
+		});
+		?updatedDecls*;
+		!|[
+	  		~cmods* class ~someClass { 
+	  			~initFunc 			 		
+	  			~updatedDecls*
+	  		}   				
+	    ]|
+
+  
+  caceffo-B2-B4 = 
+  	?|[
+  		~cmods* class ~someClass {
+  			~decls*
+  		}
+  	]|;
+  	!decls*;
+  	oncetd( {fmods*, type, func, stmts*, args*:
+  		?|[
+			~fmods* ~type ~func(~prms:args*) {
+				~stmts*
+		 	}  		
+  		]|;  
+  		!stmts*;
+  		debug(!"stmts: ");
+		oncebu({ varType, varName, varExpr:	
+			?|[
+				~varType ~varName = ~varExpr;
+			]|;
+			!varExpr;
+			debug(!"varExpr: ");
+			not(oncebu({ x: ?Id(x) }));
+			!varType;
+			debug(!"matched type: ");
+			?varTypeOut;
+			!varName;
+			debug(!"matched name: ");
+			?varNameOut;
+			!varExpr;
+			debug(!"matched expr: ");
+			?varExprOut;
+			!$[]
+			});  
+		?newStmts*;		
+		!|[
+			~fmods* ~type ~func(~prms:args*) {
+				~newStmts*
+		 	}  			
+		]|
+  	});
+  	?modifiedDecls*;
+  	!|[
+  		~cmods* class ~someClass {
+  			~varTypeOut ~varNameOut = ~varExprOut;
+  			~modifiedDecls*
+  		}
+  	]|
+  	
+//captures code of a for loop with acc and with several call of func
+//note that in real code func could be inside the loop - so more advanced patterns should be used 
+//1. Case of func() ... func() 
+//2. Case of for (...) { ... func() ... }
+//3. Case of func2() { ... func () ...} where func2 goto 1.  	
+caceffo-B2-loop-acc = 
+  	?|[
+  		~classMods* class ~someClass {
+  			~decls*
+  		}
+  	]|;
+  	!decls*;
+  	oncetd( {type, func, stmts*, args*, mods*:
+  		?|[
+			~mods* ~type ~func(~prms:args*) {
+				~stmts*
+		 	}  		
+  		]|;    	
+  		debug(!"func: ");	
+  		!stmts*;
+  		oncetd({ type, acc, expr:
+  			?|[ ~type ~acc = ~expr; ]|;
+  			!acc;
+  			debug(!"VAR: ");	
+  			!expr;
+  			not(oncebu(?Id(_)));
+  			debug(!"VAROK: ");
+  			!stmts*;
+  			oncetd(		
+				?|[
+					for(~fori:_;~_;~_*) {
+						~<oncetd(
+							?|[ 
+								~id:acc += ~_;
+							]|
+							<+ 
+							?|[ 
+								~id:acc -= ~_;
+							]|	
+							<+ 	
+							?|[ 
+								~id:acc *= ~_;
+							]|	
+							<+
+							?|[ 
+								~id:acc /= ~_;
+							]|		
+							<+
+							?|[
+								~id:acc = ~<oncebu(?Id(acc))>;
+							]|)>
+					}
+				]|);
+  			!type; ?typeOut;
+  			!acc; ?accOut;
+  			!expr; ?exprOut;			
+  			!$[]
+  		});
+  		debug(!"stmtsU: ");
+		?newStmts*;		
+		!|[
+			~mods* ~type ~func(~prms:args*) {
+				~newStmts*
+		 	}  			
+		]|
+  	});
+  	?modifiedDecls*;
+  	!|[
+  		~classMods* class ~someClass {
+  			~typeOut ~accOut = ~exprOut;
+  			~modifiedDecls*
+  		}
+  	]|
+  	
+caceffo-B2-loop-acc-v2 = 
+  	?|[
+  		~classMods* class ~someClass {
+  			~decls*
+  		}
+  	]|;
+  	!decls*;
+  	oncetd( {type, func, stmts*, args*, mods*:
+  		?|[
+			~mods* ~type ~func(~prms:args*) {
+				~stmts*
+		 	}  		
+  		]|;    	
+  		debug(!"func: ");	
+  		!stmts*;
+  		oncetd({ type, acc, expr:
+  			?|[ ~type ~acc = ~expr; ]|;
+  			!acc;
+  			debug(!"VAR: ");	
+  			!expr;
+  			not(oncebu(?Id(_)));
+  			debug(!"VAROK: ");
+  			!stmts*;
+  			oncetd(		
+				?|[
+					for(~fori:_;~_;~_*) {
+						~<oncetd(
+							?|[ 
+								~id:acc += ~_;
+							]|
+							<+ 
+							?|[ 
+								~id:acc -= ~_;
+							]|	
+							<+ 	
+							?|[ 
+								~id:acc *= ~_;
+							]|	
+							<+
+							?|[ 
+								~id:acc /= ~_;
+							]|		
+							<+
+							?|[
+								~id:acc = ~<oncebu(?Id(acc))>;
+							]|)>
+					}
+				]|);
+  			!type; ?typeOut;
+  			!acc; ?accOut;
+  			!expr; ?exprOut;			
+  			!$[]
+  		});
+  		debug(!"stmtsU: ");
+		?newStmts*;		
+		!|[
+			~mods* ~type ~func(~prms:args*) {
+				~newStmts*
+		 	}  			
+		]|
+  	});
+  	?modifiedDecls*;
+  	!|[
+  		~classMods* class ~someClass {
+  			~typeOut ~accOut = ~exprOut;
+  			~modifiedDecls*
+  		}
+  	]|  	  
+  
+caceffo-B3 = 
+  	?|[
+  		~classMods* class ~someClass {
+  			~decls*
+  		}
+  	]|;
+  	!decls*;
+  	oncetd( {type, func, stmts*, args*, mods*, foundVars:
+  		?|[
+			~mods* ~type ~func(~prms:args*) {
+				~stmts*
+		 	}  		
+  		]|;    	
+  		debug(!"func: ");	
+  		!stmts*;
+		collect({tp, x, e: 
+			?|[ ~tp x = e; ]|; 
+			!(x, tp)});		
+		?foundVars*;
+		!stmts*;
+		oncebu({ e99, x1, x2, tp:		 
+			?e99;
+			collect({x, tp: 
+				?Id(x); 
+				!foundVars*;
+				//debug(!"vars:");
+				fetch(?(x, tp)); 
+				//debug(!"found: ");
+				!(x, tp)}); 
+			?[ (x1, tp) | [ (x2, tp) | [] ] ];
+			!foundVars*;
+			fetch(not(?(x1, tp)); not(?(x2, tp)); ?(x3, tp)); 
+			!e99; 
+			debug(!"expr99: ");
+			bottomup(try(?x2; !x3));
+			debug(!"expr100: ");
+			?e100;
+			!x1; ?x1Out;
+			!x2; ?x2Out;
+			!x3; ?x3Out;
+			!tp; ?tpOut;
+			!|[ funcB3(~x1Out, ~x2Out) ]|
+			});  		
+  		debug(!"stmtsU: ");
+		?newStmts*;		
+		!|[
+			~mods* ~type ~func(~prms:args*) {
+				~newStmts*
+		 	}  			
+		]|
+  	});
+	?updatedDecls*;
+	!|[static ~tpOut funcB3(~tpOut ~x1Out, ~tpOut ~x3Out) {
+			return e100;
+		} ]|;
+	?newFunc;
+	debug(!"updatedDecls: ");
+	!|[
+  		class ~someClass {  			 		
+  			~updatedDecls*
+			~newFunc
+  		}   				
+    ]|  	      	
+  
+//EDITOR RULES  
+rules   
+
+e-caceffo-B1:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-B1.java")> path
+    ; result   := <try(oncetd(caceffo-B1)); pp-debug> node         
+
+e-stats-occurrences-caceffo-B1:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-B1.stats")> path
+    ; result   := <stats-occurrences(caceffo-B1)> node         
+  	
+e-caceffo-B2-B4:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-B2-B4.java")> path
+    ; result   := <try(oncetd(caceffo-B2-B4)); pp-debug> node
+
+e-stats-occurrences-caceffo-B2-B4:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-B2-B4.stats")> path
+    ; result   := <stats-occurrences(caceffo-B2-B4)> node
+    
+e-caceffo-B2-loop-acc:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-B2-l-a.java")> path
+    ; result   := <try(oncetd(caceffo-B2-loop-acc)); pp-debug> node  
+    
+e-stats-occurrences-caceffo-B2-loop-acc:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-B2-l-a.stats")> path
+    ; result   := <stats-occurrences(caceffo-B2-loop-acc)> node  
+
+e-caceffo-B3:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-B3.java")> path
+    ; result   := <try(oncetd(caceffo-B3)); pp-debug> node      	
+    
+e-stats-occurrences-caceffo-B3:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-B3.stats")> path
+    ; result   := <stats-occurrences(caceffo-B3)> node    
+    

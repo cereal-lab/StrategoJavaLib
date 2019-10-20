@@ -1,0 +1,36 @@
+---
+id: org.metaborg:lang.java:1.1.0-SNAPSHOT
+name: metaborg-java
+dependencies:
+  compile:
+  - org.metaborg:org.metaborg.meta.lang.esv:${metaborgVersion}
+  - org.metaborg:org.metaborg.meta.lang.template:${metaborgVersion}
+  source:
+  - org.metaborg:meta.lib.spoofax:${metaborgVersion}
+exports:
+- language: Stratego-Sugar
+  directory: src-gen
+- language: SDF
+  directory: syntax
+- language: SDF
+  directory: src-gen/syntax
+language:
+  sdf:
+    sdf2table: java
+  stratego:
+    format: ctree
+    args:
+    - -la
+    - stratego-lib
+    - -la
+    - stratego-sglr
+    - -la
+    - stratego-gpp
+    - -la
+    - stratego-xtc
+    - -la
+    - stratego-aterm
+    - -la
+    - stratego-sdf
+    - -la
+    - strc

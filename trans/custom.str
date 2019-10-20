@@ -1,0 +1,808 @@
+module custom
+imports
+  src-gen/signatures/metaborg-java-sig
+  pp
+  utils
+  libspoofax/term/origin
+	
+rules 
+  e-gp-test-01: 
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"mod.jav")> path
+      ; result   := <oncetd(gp-test-01); normalizeList; pp-debug> node      	
+rules
+
+  package-decl-mod-v1: PackageDeclaration(modifiers, namespaces) -> $[Package test]
+  package-decl-mod-v2 = ?PackageDeclaration(modifiers, namespaces); !$[Package test]
+  package-decl-mod-v3 = ?|[ package ~names*; ]|; !$[Package test]
+    
+  //Transform each name in packages to uppercase
+  package-decl-mod-v4 = 
+  	debug(!"node: "); 
+  	?|[ package ~ids*:names*; ]|; 
+  	debug(!"package found: "); 
+  	!names*; 
+  	debug(!"names: "); 
+  	map({ name, updatedName: ?Id(name); !name; debug(!"NM: "); string-as-chars(at-index(to-upper | 0)); debug(!"NMU: "); ?updatedName; !Id(updatedName) }); 
+  	debug(!"updated names: "); 
+  	?newNames*; 
+  	!|[package ~ids*:newNames*;]|	 
+  	
+//  pdecl2 = 
+//  	debug(!"node: "); 
+//  	?|[ package ~ids*:names*; ]|; 
+//  	debug(!"package found: "); 
+//  	!names*; 
+//  	debug(!"names: "); 
+//  	map({ name, updatedName: ?Id(name); !name; debug(!"NM: "); string-as-chars(at-index(to-upper | 0)); debug(!"NMU: "); ?updatedName; !Id(updatedName) }); 
+//  	debug(!"updated names: "); 
+//  	?newNames*;   	
+//  	!$[Package [newNames*]]	 
+//    
+    
+  extract-sum-v1: 
+  	Add(i, j) -> |[ someSum(~i, ~j) ]|
+  	
+  extract-sum-v2(|funName): e |[ e1 + e2 ]| -> e |[ ~funName(e1, e2) ]| 
+  	  	
+  add-sum-member: |[ ~mods* class ~name { ~members* } ]| -> 
+  					|[ ~mods* class ~name {
+   							int getSum(int i, int j) {
+  								return i + j;
+  							} 
+  							~members* 
+  					   } 
+  					]|
+  					
+  find-bar-method = ?|[ int bar() { ~s* } ]|
+  					
+//  complexTransformNotWork: 
+//  	|[ ~mods* class ~name { 
+//  			~*members1
+//  			int bar() { ~s* } 
+//  			~*members2
+//  		} 
+//  	]| -> 
+//		|[ ~mods* class ~name { 
+//				~*members2
+//				~*members1
+//		   } 
+//		]|
+		
+//  editor-complexTransformNotWork:
+//    (node, _, _, path, project-path) -> (filename, result)
+//    with
+//      filename := <guarantee-extension(|"mod.jav")> path
+//    ; result   := <topdown(try(complexTransformNotWork)); pp-debug> node			
+		
+  remove-bar-member: 
+  	|[ ~mods* class ~name { 
+  			~members*
+  		} 
+  	]| -> 
+		|[ ~mods* class ~name { 
+				~filtered*
+		   } 
+		]|
+	with filtered* := <filter(not(?|[ int bar() { ~s* } ]|))>(members*)
+	
+  extract-sum-to-method(|fName) = (|[ int ~x = ~e1 + ~e2; ]| -> 
+		|[ int ~x = ~fName(~e1, ~e2); ]|);
+		rules(
+			addFunc: 
+				|[ ~mods* class ~name { ~members* } ]| -> 
+  					|[ ~mods* class ~name { 
+  							~members* 
+  							int getSum(int i, int j) {
+  								return i + j;
+  							} 
+  					   } 
+  					]|			
+		)
+	
+  change-foo-to-bar-and-add-param:
+  	|[ 
+  		~type foo(~*args1*) {
+  			~stms*
+  	   } 
+  	]| -> 
+  		|[
+			~type bar(~* [ |[int a]| | args1*]) {				 
+  				~stms*
+  	   		}  		
+  		]|
+  		
+  change-foo-to-bar-and-replace-first-param:
+  	|[ 
+  		~type foo(~* [ _ | ps1* ]) {
+  			~stms*
+  	   } 
+  	]| -> 
+  		|[
+			~type bar(~* [ |[int a]| | ps1* ]) {				 
+  				~stms*
+  	   		}  		
+  		]| 
+  		
+  foo-to-bar-and-remove-int-parameter:
+  	|[ 
+  		~type foo(~*<split-fetch-keep(?|[int param1]|) => (c1*, c2, c3*)>) {
+  			~stms*
+  	   } 
+  	]| -> 
+  		|[
+			~type bar(~*<conc>(c1*, c3*)) {				 
+  				~stms*
+  	   		}  		
+  		]| 
+  		
+  int-to-IntWrapper-with-scope-shadowing-v1:
+  	|[ 
+  		~type foo(~*<split-fetch-keep((|[ int x ]| -> |[ IntWrapped x ]|); 
+  										rules(   											
+  											replaceP1: e |[ x ]| -> e |[ x.wrapped ]|  										
+  											scopeShadowing: lvdec |[ String x ]| -> <debug; id>
+  												with 
+	  												rules(
+	  													replaceP1 :- e |[ x ]|
+	  												)
+  											)) 
+  										=> (c1*, c2, c3*)>) {
+  			~*stms*
+  	   } 
+  	]| -> 
+  		|[
+			~type bar(~*<conc>(c1*, [ c2 | c3* ])) {				 
+  				~*<map(topdown(try(scopeShadowing <+ replaceP1)))>stms*
+  	   		}  		
+  		]|   
+  		
+  //someMyCustomRule: <?|[ int x ]|> -> <id>
+    		
+  int-to-IntWrapper-with-scope-shadowing-v2:
+  	|[ 
+  		~type foo(~*<split-fetch-keep((|[ int x ]| -> |[ IntWrapped x ]|); 
+  										rules(   											
+  											replaceP1: e |[ x ]| -> e |[ x.wrapped ]|  										
+  											)) 
+  										=> (c1*, c2, c3*)>) {
+  			~*<map(topdown(try(
+					(?(lvdec |[ ~someParam1 x ]|); 
+						rules(
+							replaceP1 :- e |[ x ]|
+						)) <+ replaceP1))) => stms*>
+  	   } 
+  	]| -> 
+  		|[
+			~type bar(~*<conc>(c1*, [ c2 | c3* ])) {				 
+  				~*stms*
+  	   		}  		
+  		]|  
+  		
+  int-to-IntWrapper-with-scope-shadowing-v3:
+  	|[ 
+  		~type foo(~*<split-fetch-keep((|[ int x ]| -> |[ IntWrapped x ]|); 
+  										rules(   											
+  											replaceP1: e |[ x ]| -> e |[ x.wrapped ]| with debug(!"Wrapping:")			
+  											shadowVar: lvdec |[ ~someType1 x ]| -> allThis
+  												with 
+  													id => allThis;
+  													rules(
+  														replaceP1 :- e |[ x ]|
+  													)
+  												//|[ ~*<?(lvdec |[ ~someType1 x ]|) => allThis> ]| -> allThis 					
+  											)) 
+  										=> (c1*, <debug(!"Var wrapped:") => c2>, c3*)>) {
+  			~*stms*
+  	   } 
+  	]| -> 
+  		|[
+			~type bar(~*<conc>(c1*, [ c2 | c3* ])) {				 
+  				~*<map(topdown(shadowVar <+ replaceP1 <+ debug(!"Wrapping failed:")<+ id))>stms*
+  	   		}  		
+  		]|  	
+  		
+  int-to-float: lvdec |[ int ~<id> ]| -> lvdec |[ float ~<id> ]|  	
+  
+  //!congruence operator 1
+  congruence-test = PackageDeclaration(!"", !"testing")
+  //!congruence operator 2 - not working //http://www.cs.uu.nl/research/techreps/repo/CS-2005/2005-006.pdf
+  //replaceIntParam =  |[ package <!"testing">; ]|//?|[ package ~<!"testing">; ]|
+  int-to-IntWrapper-with-scope-shadowing-v4:
+  	|[ 
+  		~type foo(~*<split-fetch-keep((|[ int x ]| -> |[ IntWrapped x ]|);
+  										rules(   											
+  											replaceP1+x: e |[ x ]| -> e |[ x.wrapped ]| with debug(!"Wrapping:")			
+  											shadowVar: lvdec |[ ~someType1 x ]| -> allThis
+  												with 
+  													id => allThis;
+  													rules(
+  														replaceP1+x :- e |[ x ]|
+  													)
+  												//|[ ~*<?(lvdec |[ ~someType1 x ]|) => allThis> ]| -> allThis 					
+  											)) 
+  										=> (c1*, <debug(!"Var wrapped:") => c2>, c3*)>) {
+  			~*stms*
+  	   } 
+  	]| -> 
+  		|[
+			~type bar(~*<conc>(c1*, [ c2 | c3* ])) {				 
+  				~*< {| replaceP1, shadowVar: map(topdown(shadowVar <+ replaceP1 <+ debug(!"Wrapping failed:")<+ id)) |} >stms*
+  	   		}  		
+  		]| 
+  		
+	int-to-IntWrapper-with-scope-shadowing-v5:
+  	|[ 
+  		~type foo(~*<split-fetch-keep((|[ int x ]| -> |[ IntWrapped x ]|);
+  										where(new-replaceP1(|x, x));
+  										rules(   											
+  											replaceP1.x: e |[ x ]| -> e |[ x.wrapped ]| with debug(!"Wrapping:") depends on [(x, x)]			
+  											shadowVar: lvdec |[ ~someType1 x ]| -> allThis
+  													with id => allThis;
+  													where(new-replaceP1(|x, x)) 					
+  											)) 
+  										=> (c1*, <debug(!"Var wrapped:") => c2>, c3*)>) {
+  			~*stms*
+  	   } 
+  	]| -> 
+  		|[
+			~type bar(~*<conc>(c1*, [ c2 | c3* ])) {				 
+  				~*< {| replaceP1, shadowVar: map(topdown(shadowVar <+ replaceP1 <+ debug(!"Wrapping failed:")<+ id)) |} >stms*
+  	   		}  		
+  		]|  
+
+	//one that is correct, but not fully - conter example  several scopes within scopes
+	int-to-IntWrapper-with-scope-shadowing-v6:
+  	|[ 
+  		~type foo(~*<split-fetch-keep((|[ int x ]| -> |[ IntWrapped x ]|);
+  										where(new-replaceP1(|x, x));
+  										rules(   													
+  											shadowVar: lvdec |[ ~someType1 x ]| -> allThis
+												with id => allThis;
+												rules(
+													replaceP1.x :- e |[ x ]|
+												)					
+  											)) 
+  										=> (c1*, <debug(!"Var wrapped:") => c2>, c3*)>) {
+  			~*stms*
+  	   } 
+  	]| -> 
+  		|[
+			~type bar(~*<conc>(c1*, [ c2 | c3* ])) {				 
+  				~*<map(rules(replaceP1: e |[ x ]| -> e |[ x.wrapped ]| with debug(!"Wrapping:")); bottomup(shadowVar <+ replaceP1 <+ id))>stms*
+  	   		}  		
+  		]|  
+  		
+	//one that is correct, but not fully - conter example  several scopes within scopes	
+	replaceIntParamX = (?|[ { ~*<id> } ]|; debug) <+ id
+	int-to-IntWrapper-with-scope-shadowing-v7:
+  	|[ 
+  		~type foo(~*<split-fetch-keep((|[ int x ]| -> |[ IntWrapped x ]|);
+  										where(new-replaceP1(|x, x));
+  										rules(   													
+  											shadowVar: lvdec |[ ~someType1 x ]| -> allThis
+												with id => allThis;
+												rules(
+													replaceP1.x :- e |[ x ]|
+												)					
+  											)) 
+  										=> (c1*, <debug(!"Var wrapped:") => c2>, c3*)>) {
+  			~*stms*
+  	   } 
+  	]| -> 
+  		|[
+			~type bar(~*<conc>(c1*, [ c2 | c3* ])) {				 
+  				~*<map(topdown(( ?|[ { ~*stmsX* } ]|; debug(!"Block: "); rules(replaceP1: e |[ x ]| -> e |[ x.wrapped ]| with debug(!"Wrapping:"))) <+ shadowVar <+ replaceP1 <+ id))>stms*
+  	   		}  		
+  		]|   	
+  		
+  //this is downup(s1,s2)  		
+  topdownWithExit(s, onExit) = 
+    s; all(topdownWithExit(s, onExit)); onExit
+ 
+     		/*
+   replaceIntParam:
+  	|[
+  		~type foo(~*<fetch((|[ int x ]| -> |[ IntWrapped x ]|)); 
+  						rules(replaceP1: e |[ x ]| -> e |[ x.wrapped ]| with debug(!"Wrapping:")); 
+  						id => prms*>) 
+//  										where(new-replaceP1(|x, x));
+//  										rules(   													
+//  											shadowVar: lvdec |[ ~someType1 x ]| -> allThis
+//												with id => allThis;
+//												rules(
+//													replaceP1.x :- e |[ x ]|
+//												)					
+//  											)) 
+//  										=> (c1*, <debug(!"Var wrapped:") => c2>, c3*)>) 
+  	   {
+  			~*stms*
+  	   } 
+  	]| -> 
+  		|[
+			~type bar(~*prms*) {				 
+  				~*<map(downup(
+  					(lvdec |[ ~someType1 x ]| -> allThis
+						with id => allThis;
+						rules(
+							replaceP1.x :- e |[ x ]|
+						))
+  					
+  				   rules(replaceP1: e |[ x ]| -> e |[ x.wrapped ]| with debug(!"Wrapping:"))) <+ shadowVar <+ replaceP1 <+ id))>stms*
+  	   		}  		
+  		]|   	*/
+  		
+  		
+  		
+//    with 
+//		<debug> ps1
+//		; <split-fetch-keep(debug(!"Checking P:"); (param |[int param1]| -> param |[ IntWrapped param1 ]|))> ps* 
+//  			=> (paramsBefore*, v, paramsAfter*)
+//  		; <conc>(paramsBefore*, [ v | paramsAfter*]) => newps*
+
+  wrap-int:
+  	|[ ~type ~name(~ps*) {
+  			~stms*
+  	   } 
+  	]| -> 
+  		|[
+			~type ~name(~newps*) {				 
+  				~newStms*
+  	   		}  		
+  		]|
+  	where 
+  		<split-fetch-keep(debug(!"Checking P:");(|[int x]| -> |[ IntWrapped x ]|))> ps* 
+  			=> (paramsBefore*, v, paramsAfter*);
+  		rules(
+  			updateStatements: 
+  				e |[ x ]| -> e |[ x.wrappedValue ]|			
+  		);
+  		<conc>(paramsBefore*, [ v | paramsAfter*]) => newps*;  		
+		<map((?|[ t1 x ]|; rules(updateStatements :- e |[ x ]|)) 
+				<+ updateStatements <+ id)> stms* => newStms*	  
+  		  		  	  	  	
+drop-static-from-class: 
+	|[
+		static class ~name {
+			~decls*
+		}
+	]| -> 
+		|[
+			class ~name {
+				~decls*
+			}
+		]|
+		
+add-Modified-to-class-name: 
+	|[
+		~mods* class ~name {
+			~decls*
+		}
+	]| -> 
+		|[
+			~mods* class ~<!$[ [name]Modified ]> {
+				int _thisVarIsAdded = 42;
+				~decls*
+			}
+		]|		
+	with 
+		debug(!"match: ")
+		    
+add-local-variable:     
+	|[
+		~mods* ~type ~func(~prms:args*) {
+			~stmts*
+		}
+	]| -> 
+		|[
+			~mods* ~type ~func(~prms:args*) {
+				int _addedLocalVar = 42;
+				~stmts*
+			}			 
+		]|
+				    
+//order of bool expression    
+//too generic
+//Caceffo G
+ predicateOrder: 
+	|[ e1 && e2 ]| -> |[ e2 && e1 ]|
+//concrete	
+ predicateOrder-array = 
+ 	?|[ (x < x2.length) && e2 ]|;
+ 	debug(!"foundPred: ");
+ 	!e2;
+ 	debug(!"e2: ");
+ 	oncebu(?|[ x2[x] ]|; debug(!"arr[x]: "));
+ 	!|[ e2 && (x < x2.length) ]|	
+    
+ predicateOrder-paren:
+ 	|[ e1 && (e2 || e3) ]| -> |[ (e1 && e2) || e3 ]|  
+ 	                 
+ loop-interchange-for-for-simple:
+ 	|[ 
+ 		for (~fori:initOuter*; ~condOuter; ~iterOuter*) 
+ 		{
+	 		for (~fori:initInner*; ~condInner; ~iterInner*) {
+	 			~stmts*
+			}
+		}
+ 	]| -> |[ 
+ 		for (~fori:initInner*; ~condInner; ~iterInner*)
+ 		{
+	 		for (~fori:initOuter*; ~condOuter; ~iterOuter*) {
+	 			~stmts*
+	 		} 
+	 	} ]|  		    
+    
+ loop-interchange-for-for =
+ 	?|[ 
+ 		for (~fori:initOuter*; ~condOuter; ~iterOuter*) {
+	 		~stmtsOuter*
+		}
+ 	]|; 
+ 	!stmtsOuter*;
+ 	oncetd(?|[
+		for (~fori:initInner*; ~condInner; ~iterInner*) {
+ 			~stmts*
+	 	} 		
+ 		]|;
+ 		!|[
+		for (~fori:initOuter*; ~condOuter; ~iterOuter*) {
+ 			~stmts* 
+	 	} 	 		
+ 		]|);
+ 	?modifiedStmtsOuter*;
+ 	!|[ 
+ 		for (~fori:initInner*; ~condInner; ~iterInner*) {
+	 		~modifiedStmtsOuter*
+		}
+ 	]|	      
+  	
+test-occurrences = ?|[ int x; ]| <+ ?|[ int x = ~_; ]| 		  
+	  	
+//additional libs: https://github.com/metaborg/spoofax/tree/0cb78518fb9512fda348d3be705b4bd3dc50a581/meta.lib.spoofax/trans/libspoofax
+//see import	  	
+test-origin = 
+	collect({ x: ?|[ int ~x; ]|; !(x, <origin-location-offset>, <origin-term>) })	  	
+	
+//match-for = 
+//	?|[
+//		for (~init;~cond;~inc) {
+//			~stms*
+//		}	
+//	]|
+
+
+//WRONG: wrong last operation ~initOut could depend on prev operations
+gp-poc-wrong =  
+	?|[
+		{
+			~stms1*
+		}
+	]|; //match-block gp node 
+	!stms1*; //! gp node with MetaVar gp node - the name
+	oncetd({ init, cond, inc:  //oncetd gp node with child - always isolates everything inside
+		?|[ 
+		    for (~init;~cond;~inc) {
+				~stms*
+			}
+		]|; //match-for gp node
+		!|[
+			{
+				~stms*
+				~inc;
+			}
+		]|; //append-to-block gp node
+		?modifiedNodes; //? node of gp 
+		where(!init; ?initOut);  //out gp node Out(MetaVar, MetaVar)
+		!|[
+			while(~cond) ~modifiedNodes
+		]|
+	});
+	!|[
+		{
+			~initOut;
+			~stms1*
+		}
+	]| //prepend-to-block gp node
+
+gp-poc-expected-old =  
+	?|[ 
+	    for (~type ~loopVar = ~initExpr;~cond;~inc) {
+			~*stms*
+		}
+	]|; //match-for gp node
+	debug(!"for: ");
+	!|[
+		{
+			~*stms*
+			~inc;
+		}
+	]|; //append-to-block gp node
+	?modifiedNodes; //? node of gp 
+	!|[ ~type ~loopVar = ~initExpr; ]|; //expr to statement gp node
+	?initStatament; 
+	!|[
+		while(~cond) ~modifiedNodes;
+	]|; //build while gp node
+	?while;
+	![initStatament, while] 
+	
+gp-poc-expected =  
+	?|[ 
+	    for (lvdec1;~cond;~inc) {
+			~stms*
+		}
+	]|; //match-for gp node
+	!lvdec1;
+	?lvdec |[ ~type ~x = ~initExpr ]|;
+	debug(!"for 3: ");
+	![
+		|[ 
+		~type ~x = ~initExpr; 
+		]|,
+		|[
+			while(~cond)
+			{
+				~stms*
+				~inc;
+			}		
+		]|
+	]
+	
+gp-poc-3 =  
+	?|[ 
+	    for (~fori:init*;~cond;~inc*) {
+			~*stms*
+		}
+	]|; //match-for gp node
+	debug(!"for: ");
+	!|[
+		{
+			~*stms*
+			~inc*;
+		}
+	]|; //append-to-block gp node
+	?modifiedNodes; //? node of gp 
+	!|[
+		while(~cond) ~modifiedNodes;
+	]|; //build while gp node
+	?while;
+	!|[
+		{
+			~init*;
+			~while
+		}
+	]| //prepend-t-block gp node
+
+gp-poc-01 =  
+	?|[ 
+	    for (~type ~loopVar = ~initExpr;~cond;~inc) {
+			~*stms*
+		}
+	]|; 
+	debug(!"found for: ");
+	!|[ ~type ~loopVar = ~initExpr; ]|;
+	?initStatement;
+	!|[
+		{
+			~initStatement
+			while(~cond) {
+				~*stms*
+				~inc;			
+			}
+		}
+	]|
+
+test-set-annot =
+	?|[ ~type x = e; ]|; ?localVar; !localVar{"myLocalVar", type}
+
+test-match-annot = 
+	?|[ ~type x = e; ]|; ?localVar{annot*}
+	
+get-parent = prim("SSL_EXT_get_parent", <id>)
+
+//	debug(!"found for: ");
+//	get-parent;
+//	debug(!"parent: ");	
+//	get-annotations;
+//	debug(!"annotations: ");
+
+gp-poc =  
+	?|[ 
+	    for (~type ~loopVar = ~initExpr;~cond;~inc) {
+			~*stms*
+		}
+	]|; 
+	!|[ ~type ~loopVar = ~initExpr; ]|;
+	?initStatement;
+	!|[ 
+		while(~cond) {
+			~*stms*
+			~inc;			
+		}	
+	]|;
+	?while;
+	![initStatement, while]
+
+gp-poc-general =  
+	?|[ 
+	    for (~fori:initExpr*;~cond;~changeExpr*) {
+			~*stms*
+		}
+	]|; 
+	//!initExpr*; map({expr: ?expr; !|[ ~expr; ]|}); ?initStmt*;
+	!changeExpr*; map({expr: ?expr; !|[ ~expr; ]|}); ?changeStmt*;
+	!|[ 
+		while(~cond) {
+			~*stms*
+			~*changeStmt*		
+		}	
+	]|;
+	?while;
+	![while]	
+
+gp-poc-2 =  
+	?|[ 
+	    for (~fori:init*;~cond;~inc*) {
+			~*stms*
+		}
+	]|; //match-for gp node
+	debug(!"for: ");
+	!|[
+		{
+			~*stms*
+			~inc*;
+		}
+	]|; //append-to-block gp node
+	?modifiedNodes; //? node of gp 
+	!|[ ~init*; ]|; //expr to statement gp node
+	?initStatament; 
+	!|[
+		while(~cond) ~modifiedNodes
+	]|; //build-while gp-node
+	?whileStatement;
+	![]; ?lst0; //empty list node
+	![ 	whileStatement | lst0 ]; ?lst1;
+	![ 	initStatament | lst1 ]; ?lst2; //add two to list  
+	debug(!"lst: ");
+	?mstms*;
+	!mstms*
+	
+gp-test-01 = 
+	?|[ for (~type ~loopVar = ~initExpr;~cond;~inc) { ~stmts* } ]|;
+	debug(!"for: ");
+	!|[
+		while (a > 0) {
+			a++;
+			a--;
+			if (a == 5) break;
+			~stmts*
+			a++;
+		} 
+	]|
+	
+exp-type-test =
+	?ast;
+	oncetd({e1, e2, e1Literals, e1Vars, line, column, foundType: ?|[ e1 - e2 ]|;
+		!(<origin-line>, <origin-column>) => (line, column);		
+		!e1;
+		get-e-type(|ast, line, column);
+		!e2;
+		get-e-type(|ast, line, column);
+		!|[ funcCall() ]|
+		})
+		
+//RULES FOR EDITOR
+rules 
+	e-exp-type-test: 
+	    (node, _, _, path, project-path) -> (filename, result)
+	    with
+	      filename := <guarantee-extension(|"mod.jav")> path
+	      ; result   := <try(oncetd(exp-type-test)); pp-debug> node		
+  e-test-with-occurrences: 
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"mod.jav")> path
+      ; result   := <with-occurrences(test-occurrences)> node
+  e-test-occurrences: 
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"mod.jav")> path
+      ; result   := <stats-occurrences(test-occurrences)> node	  
+  e-package-decl-mod-v1:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"mod.jav")> path
+    ; result   := <topdown(try(package-decl-mod-v1)); pp-debug> node	
+    
+  e-package-decl-mod-v4:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"mod.jav")> path
+    ; result   := <oncetd(package-decl-mod-v4); pp-debug> node
+    
+  e-package-decl-mod-v4:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"mod.jav")> path
+    ; result   := <stats-occurrences(package-decl-mod-v4)> node	 
+    
+ e-loop-interchange-for-for:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"mod.jav")> path
+    ; result   := <try(oncetd(loop-interchange-for-for)); pp-debug> node          
+                   
+  e-wrap-int:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"mod.jav")> path
+    ; result   := <topdown(try(wrap-int)); pp-debug> node    
+    
+  e-extract-sum-v2:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"mod.jav")> path
+    ; result   := <topdown(try(extract-sum-v2(|"someSum"))); pp-debug> node
+    
+  e-add-sum-member:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"mod.jav")> path
+    ; result   := <topdown(try(add-sum-member)); pp-debug> node	  
+    
+  e-remove-bar-member:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"mod.jav")> path
+    ; result   := <topdown(try(e-remove-bar-member)); pp-debug> node	 
+    	  	
+  e-add-Modified-to-class-name:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"mod.jav")> path
+    ; result   := <try(topdown(try(add-Modified-to-class-name))); pp-debug> node     
+		
+  e-add-local-variable:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"mod.jav")> path
+    ; result   := <try(topdown(try(add-local-variable))); pp-debug> node  		
+     
+  e-predicateOrder-array:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"mod.jav")> path
+    ; result   := <try(oncetd(predicateOrder-array)); pp-debug> node   	
+  e-predicateOrder-paren:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"mod.jav")> path
+    ; result   := <try(oncetd(predicateOrder-paren)); pp-debug> node  
+  e-loop-interchange-for-for-simple:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"mod.jav")> path
+    ; result   := <try(oncetd(loop-interchange-for-for-simple)); pp-debug> node   
+    
+  e-rnd-elem:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"rnd")> path
+    ; result   := <rand-occurrence> [42, 43, 44, 45, 99]     
+    
+  e-test-origin: 
+  	(node, _, _, path, project-path) -> (filename, result) 
+  	with 
+  		filename := <guarantee-extension(|"origins")> path
+  		; result := <test-origin> node
+  		
+  e-gp-poc: 
+  	(node, _, _, path, project-path) -> (filename, result) 
+  	with 
+  		filename := <guarantee-extension(|"poc.jav")> path
+  		; result := <try(oncetd(gp-poc-expected)); normalizeList; pp-debug> node
+   	
+    

@@ -1,0 +1,161 @@
+module caceffo-C
+imports
+  src-gen/signatures/metaborg-java-sig
+  pp
+  utils
+	
+rules  
+
+//Reccursion - Caceffo C    
+//C1 - is simple ++ -> -- but probably with captured context like in next
+//C1 
+//TODO: 
+caceffo-C1-p(breakDecrementExpression) = 
+ 	?|[ 
+ 		~mods* ~type ~fun(~prms:args*) {
+ 			~stms*
+ 		}
+ 	]|; 
+ 	!fun;
+ 	debug(!"found fun: ");
+ 	!stms*;
+ 	oncetd(?|[
+		return ~fun(~e1);
+ 		]|; debug(!"found return fun: ");
+ 		!e1; 
+ 		breakDecrementExpression;
+ 		?e1Modified;
+ 		!|[
+ 		return ~fun(~e1Modified);
+ 		]|);
+	?modifiedStms*;
+ 	!|[ 
+ 		~mods* ~type ~fun(~prms:args*) {
+ 			~modifiedStms*
+ 		}
+ 	]|	
+ 	
+caceffo-C1 = 
+ 	caceffo-C1-p((?e |[ x-- ]|; !|[ x++ ]|) <+ 
+ 		(?e |[ e1-e2 ]|; !|[ e1+e2 ]|) <+
+ 		(?e |[ --x ]|; !|[ ++x ]|) <+
+ 		(?e |[ ++x ]|; !|[ --x ]|) <+
+ 		(?e |[ x++ ]|; !|[ x-- ]|) <+
+ 		(?e |[ e1+e2 ]|; !|[ e1-e2 ]|)
+ 	)
+
+//TODO (noncritical): return else or if block if the call is only one in them
+caceffo-C2 =
+ 	?|[ 
+ 		~mods* ~type ~fun(~prms:args*) {
+ 			~stms*
+ 		}
+ 	]|; 
+ 	!fun;
+ 	debug(!"found fun: ");
+ 	!stms*;
+ 	oncetd((?|[ return ~fun(~_*); ]| <+ ?|[ ~fun(~_*); ]|); debug(!"found return fun: ");
+ 		!$[]);
+ 	?modifiedStms*;
+ 	!|[ 
+ 		~mods* ~type ~fun(~prms:args*) {
+ 			~modifiedStms*
+ 		}
+ 	]|
+    
+caceffo-C3 =
+ 	?|[ 
+ 		~mods* ~type ~fun(~prms:args*) {
+ 			~stms*
+ 		}
+ 	]|; 
+ 	!fun;
+ 	debug(!"fun: ");
+ 	!stms*; 	
+ 	oncetd(?|[ return ~fun(~_*); ]|);
+ 	oncebu({ e1, ifStmts*, ifStmt, elseStmts*:
+ 		(?|[
+ 		if (e1) {
+ 			~ifStmts*
+ 		} else {
+ 			~elseStmts*
+ 		}
+ 		]|; debug(!"case1: ");
+ 		 ((!ifStmts*; 
+ 		 not(oncetd(?|[ return ~fun(~_*); ]|));
+ 		 fetch(?|[ return ~_; ]|);
+ 		 !elseStmts*;
+ 		 oncetd(?|[ return ~fun(~_*); ]|);
+ 		 !|[
+ 		 	if (!e1) {
+ 		 		~elseStmts*
+	 		}
+ 		 ]|) <+ 
+ 		 (!elseStmts*;
+ 		  not(oncetd(?|[ return ~fun(~_*); ]|));
+ 		  fetch(?|[ return ~_; ]|);
+ 		  !ifStmts*;
+ 		  oncetd(?|[ return ~fun(~_*); ]|);
+		  !|[
+ 		 	if (e1) {
+ 		 		~ifStmts*
+	 		}
+ 		 ]|)))
+ 		 <+ 
+ 		(?|[ 
+			if (e1) {
+	 			~ifStmts*
+	 		} 			
+ 		]|; debug(!"case2: ");
+ 		!ifStmts*;
+ 		not(oncetd(?|[ return ~fun(~_*); ]|));
+ 		fetch(?|[ return ~_; ]|);
+ 		!$[]) <+
+ 		(?|[ if (e1) return ~_; ]|; debug(!"case3: "); !$[])
+ 	}); //could be simple topdown 
+ 	?modifiedStms*;
+ 	!|[ 
+ 		~mods* ~type ~fun(~prms:args*) {
+ 			~modifiedStms*
+ 		}
+ 	]|                       
+
+
+//RULES FOR EDITOR
+rules
+
+e-caceffo-C1:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-C1.java")> path
+    ; result   := <try(oncetd(caceffo-C1)); pp-debug> node 
+
+e-stats-occurrences-caceffo-C1:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-C1.stats")> path
+    ; result   := <stats-occurrences(caceffo-C1)> node     
+
+e-caceffo-C2:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-C2.java")> path
+    ; result   := <try(oncetd(caceffo-C2)); pp-debug> node 
+    
+e-stats-occurrences-caceffo-C2:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-C2.stats")> path
+    ; result   := <stats-occurrences(caceffo-C2)> node     
+    
+e-caceffo-C3:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-C3.java")> path
+    ; result   := <try(oncetd(caceffo-C3)); pp-debug> node      
+    
+e-stats-occurrences-caceffo-C3:
+    (node, _, _, path, project-path) -> (filename, result)
+    with
+      filename := <guarantee-extension(|"c-C3.stats")> path
+    ; result   := <stats-occurrences(caceffo-C3)> node     
